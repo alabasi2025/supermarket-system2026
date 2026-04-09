@@ -1,0 +1,200 @@
+{% extends 'base.html' %}
+
+{% block title %}التقارير - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}التقارير{% endblock %}
+{% block page_subtitle %}تقارير المشتريات والمخزون{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Report Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        
+        <!-- تقرير المشتريات -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+            <div class="p-6">
+                <div class="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-4">
+                    <svg class="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-gray-800 mb-2">تقرير المشتريات</h3>
+                <p class="text-sm text-gray-500 mb-4">إجمالي المشتريات حسب المورد والفترة الزمنية</p>
+                <button onclick="loadPurchasesReport()" 
+                        class="w-full py-2 px-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">
+                    عرض التقرير
+                </button>
+            </div>
+        </div>
+        
+        <!-- مديونيات الموردين -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+            <div class="p-6">
+                <div class="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mb-4">
+                    <svg class="w-7 h-7 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-gray-800 mb-2">مديونيات الموردين</h3>
+                <p class="text-sm text-gray-500 mb-4">المبالغ المستحقة للموردين</p>
+                <button onclick="loadDebtsReport()" 
+                        class="w-full py-2 px-4 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors">
+                    عرض التقرير
+                </button>
+            </div>
+        </div>
+        
+        <!-- حركة المخزون -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+            <div class="p-6">
+                <div class="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center mb-4">
+                    <svg class="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-gray-800 mb-2">حركة المخزون</h3>
+                <p class="text-sm text-gray-500 mb-4">حركة الدخول والخروج لكل صنف</p>
+                <a href="{{ url_for('inventory') }}" 
+                   class="block w-full py-2 px-4 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors text-center">
+                    عرض المخزون
+                </a>
+            </div>
+        </div>
+        
+        <!-- مقارنة الأسعار -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+            <div class="p-6">
+                <div class="w-14 h-14 bg-purple-100 rounded-2xl flex items-center justify-center mb-4">
+                    <svg class="w-7 h-7 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-gray-800 mb-2">مقارنة أسعار الموردين</h3>
+                <p class="text-sm text-gray-500 mb-4">مقارنة أسعار نفس الصنف بين الموردين</p>
+                <a href="{{ url_for('supplier_prices') }}" 
+                   class="block w-full py-2 px-4 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors text-center">
+                    عرض المقارنة
+                </a>
+            </div>
+        </div>
+        
+        <!-- أصناف تحت الحد الأدنى -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+            <div class="p-6">
+                <div class="w-14 h-14 bg-yellow-100 rounded-2xl flex items-center justify-center mb-4">
+                    <svg class="w-7 h-7 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-gray-800 mb-2">أصناف تحتاج طلب</h3>
+                <p class="text-sm text-gray-500 mb-4">الأصناف التي وصلت أو أقل من الحد الأدنى</p>
+                <a href="{{ url_for('inventory') }}" 
+                   class="block w-full py-2 px-4 bg-yellow-600 text-white rounded-xl hover:bg-yellow-700 transition-colors text-center">
+                    عرض الأصناف
+                </a>
+            </div>
+        </div>
+        
+    </div>
+    
+    <!-- Report Results -->
+    <div id="reportResults" class="hidden bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+            <h2 id="reportTitle" class="text-lg font-bold text-gray-800">نتائج التقرير</h2>
+            <button onclick="closeReport()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div id="reportContent" class="p-6">
+            <!-- Report content will be loaded here -->
+        </div>
+    </div>
+    
+</div>
+
+<script>
+function closeReport() {
+    document.getElementById('reportResults').classList.add('hidden');
+}
+
+async function loadPurchasesReport() {
+    try {
+        const response = await fetch('/api/reports/purchases');
+        const data = await response.json();
+        
+        let html = '<div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr>';
+        html += '<th class="px-6 py-3 text-right text-sm font-semibold text-gray-600">المورد</th>';
+        html += '<th class="px-6 py-3 text-right text-sm font-semibold text-gray-600">عدد الفواتير</th>';
+        html += '<th class="px-6 py-3 text-right text-sm font-semibold text-gray-600">الإجمالي</th>';
+        html += '</tr></thead><tbody class="divide-y">';
+        
+        let total = 0;
+        data.forEach(row => {
+            total += row.total || 0;
+            html += `<tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 font-medium text-gray-800">${row.supplier_name}</td>
+                <td class="px-6 py-4 text-gray-600">${row.invoice_count}</td>
+                <td class="px-6 py-4 font-bold text-primary-600">${Number(row.total || 0).toLocaleString()}</td>
+            </tr>`;
+        });
+        
+        html += `<tr class="bg-gray-100 font-bold">
+            <td class="px-6 py-4" colspan="2">الإجمالي</td>
+            <td class="px-6 py-4 text-primary-600">${total.toLocaleString()}</td>
+        </tr>`;
+        html += '</tbody></table></div>';
+        
+        if (data.length === 0) {
+            html = '<p class="text-center text-gray-500 py-8">لا توجد بيانات</p>';
+        }
+        
+        document.getElementById('reportTitle').textContent = 'تقرير المشتريات';
+        document.getElementById('reportContent').innerHTML = html;
+        document.getElementById('reportResults').classList.remove('hidden');
+        
+    } catch (error) {
+        alert('حدث خطأ في تحميل التقرير');
+    }
+}
+
+async function loadDebtsReport() {
+    try {
+        const response = await fetch('/api/reports/supplier-debts');
+        const data = await response.json();
+        
+        let html = '<div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr>';
+        html += '<th class="px-6 py-3 text-right text-sm font-semibold text-gray-600">المورد</th>';
+        html += '<th class="px-6 py-3 text-right text-sm font-semibold text-gray-600">إجمالي الفواتير</th>';
+        html += '<th class="px-6 py-3 text-right text-sm font-semibold text-gray-600">المدفوع</th>';
+        html += '<th class="px-6 py-3 text-right text-sm font-semibold text-gray-600">المتبقي</th>';
+        html += '</tr></thead><tbody class="divide-y">';
+        
+        data.forEach(row => {
+            const remaining = (row.total_invoices || 0) - (row.total_paid || 0);
+            html += `<tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 font-medium text-gray-800">${row.name}</td>
+                <td class="px-6 py-4 text-gray-600">${Number(row.total_invoices || 0).toLocaleString()}</td>
+                <td class="px-6 py-4 text-green-600">${Number(row.total_paid || 0).toLocaleString()}</td>
+                <td class="px-6 py-4 font-bold text-red-600">${remaining.toLocaleString()}</td>
+            </tr>`;
+        });
+        
+        html += '</tbody></table></div>';
+        
+        if (data.length === 0) {
+            html = '<p class="text-center text-gray-500 py-8">لا توجد مديونيات</p>';
+        }
+        
+        document.getElementById('reportTitle').textContent = 'مديونيات الموردين';
+        document.getElementById('reportContent').innerHTML = html;
+        document.getElementById('reportResults').classList.remove('hidden');
+        
+    } catch (error) {
+        alert('حدث خطأ في تحميل التقرير');
+    }
+}
+</script>
+{% endblock %}

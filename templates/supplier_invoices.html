@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block title %}فواتير المورد - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}فواتير المورد{% endblock %}
+{% block page_subtitle %}إدارة فواتير الموردين{% endblock %}
+
+{% block header_actions %}
+<a href="{{ url_for('new_supplier_invoice') }}" 
+   class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    <span>فاتورة جديدة</span>
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Invoices Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full table-hover">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">رقم الفاتورة</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">المورد</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">التاريخ</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الإجمالي</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الحالة</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">أنشئت بواسطة</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for invoice in invoices %}
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4">
+                            <span class="font-bold text-primary-600">{{ invoice.invoice_number }}</span>
+                        </td>
+                        <td class="px-6 py-4 font-medium text-gray-800">{{ invoice.supplier_name }}</td>
+                        <td class="px-6 py-4 text-gray-600">{{ invoice.invoice_date }}</td>
+                        <td class="px-6 py-4 font-bold text-gray-800">{{ "{:,.0f}".format(invoice.total_amount) }}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
+                                {% if invoice.status == 'pending' %}bg-yellow-100 text-yellow-800
+                                {% elif invoice.status == 'sorting' %}bg-blue-100 text-blue-800
+                                {% elif invoice.status == 'delivered' %}bg-purple-100 text-purple-800
+                                {% else %}bg-green-100 text-green-800{% endif %}">
+                                {% if invoice.status == 'pending' %}⏳ معلقة
+                                {% elif invoice.status == 'sorting' %}📦 جاري الفرز
+                                {% elif invoice.status == 'delivered' %}🚚 تم التسليم
+                                {% else %}✅ تم الاستلام{% endif %}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ invoice.created_by_name }}</td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-center gap-2">
+                                {% if invoice.status == 'pending' %}
+                                <a href="{{ url_for('sort_invoice', supplier_invoice_id=invoice.id) }}"
+                                   class="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                    </svg>
+                                    فرز
+                                </a>
+                                {% endif %}
+                                <a href="{{ url_for('view_supplier_invoice', id=invoice.id) }}" 
+                                   class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg" title="عرض التفاصيل">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                    </svg>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center">
+                            <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            <p class="text-gray-500 mb-4">لا توجد فواتير بعد</p>
+                            <a href="{{ url_for('new_supplier_invoice') }}" 
+                               class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700">
+                                إنشاء فاتورة جديدة
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

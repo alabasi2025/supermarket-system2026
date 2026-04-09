@@ -1,0 +1,311 @@
+{% extends 'base.html' %}
+
+{% block title %}الأصناف - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}الأصناف{% endblock %}
+{% block page_subtitle %}إدارة أصناف السوبرماركت{% endblock %}
+
+{% block header_actions %}
+<button onclick="openAddModal()" 
+        class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    <span>إضافة صنف</span>
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Search & Filter -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1 relative">
+                <input type="text" id="searchInput" placeholder="بحث عن صنف..."
+                       class="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <svg class="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+            </div>
+            <select id="categoryFilter" class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                <option value="">كل الأقسام</option>
+                {% for category in categories %}
+                <option value="{{ category.id }}">{{ category.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    
+    <!-- Products Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full table-hover">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">#</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">اسم الصنف</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">اسم الفاتورة</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الباركود</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">القسم</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الوحدة</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">المخزون</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الحد الأدنى</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for product in products %}
+                    <tr class="hover:bg-gray-50 transition-colors {% if product.current_stock <= product.min_stock %}bg-red-50{% endif %}">
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ loop.index }}</td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                              d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-gray-800">{{ product.name }}</p>
+                                    {% if product.name_en %}
+                                    <p class="text-sm text-gray-500">{{ product.name_en }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ product.receipt_name or '-' }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-600 font-mono">{{ product.barcode or '-' }}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                {{ product.category_name or 'بدون قسم' }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ product.unit }}</td>
+                        <td class="px-6 py-4">
+                            <span class="font-bold {% if product.current_stock <= product.min_stock %}text-red-600{% else %}text-green-600{% endif %}">
+                                {{ product.current_stock }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ product.min_stock }}</td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="openEditModal({{ product.id }}, '{{ product.name }}', '{{ product.receipt_name or '' }}', '{{ product.name_en or '' }}', '{{ product.barcode or '' }}', '{{ product.category_id or '' }}', '{{ product.unit or 'قطعة' }}', {{ product.min_stock or 0 }}, '{{ product.notes or '' }}')"
+                                        class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="تعديل">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                </button>
+                                <button onclick="deleteProduct({{ product.id }}, '{{ product.name }}')"
+                                        class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="حذف">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="9" class="px-6 py-12 text-center">
+                            <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                            </svg>
+                            <p class="text-gray-500 mb-4">لا توجد أصناف بعد</p>
+                            <button onclick="openAddModal()" 
+                                    class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700">
+                                إضافة صنف جديد
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div id="productModal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="fixed inset-0 bg-black/50" onclick="closeModal()"></div>
+    <div class="min-h-full flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl relative my-8">
+            <div class="p-6 border-b border-gray-200">
+                <h3 id="modalTitle" class="text-xl font-bold text-gray-800">إضافة صنف جديد</h3>
+            </div>
+            <form id="productForm" onsubmit="saveProduct(event)" class="p-6 space-y-4">
+                <input type="hidden" id="productId" value="">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">اسم الصنف (الداخلي) *</label>
+                        <input type="text" id="productName" required
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                               placeholder="مثال: بسكويت أوريو ساندويتش بالفانيليا 44 جم">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">اسم الفاتورة (المختصر)</label>
+                        <input type="text" id="productReceiptName"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                               placeholder="مثال: أوريو 44جم">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">الاسم الإنجليزي</label>
+                        <input type="text" id="productNameEn" dir="ltr"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                               placeholder="Oreo Sandwich Biscuit 44g">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">الباركود</label>
+                        <input type="text" id="productBarcode" dir="ltr"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                               placeholder="مثال: 6221234567890">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">القسم</label>
+                        <select id="productCategory"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            <option value="">-- اختر القسم --</option>
+                            {% for category in categories %}
+                            <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">الوحدة</label>
+                        <select id="productUnit"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            <option value="قطعة">قطعة</option>
+                            <option value="كرتون">كرتون</option>
+                            <option value="كيلو">كيلو</option>
+                            <option value="لتر">لتر</option>
+                            <option value="باكت">باكت</option>
+                            <option value="علبة">علبة</option>
+                            <option value="كيس">كيس</option>
+                            <option value="شدة">شدة</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">الحد الأدنى للمخزون</label>
+                        <input type="number" id="productMinStock" min="0" step="0.01" value="0"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                    
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">ملاحظات</label>
+                        <textarea id="productNotes" rows="2"
+                                  class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                  placeholder="ملاحظات إضافية..."></textarea>
+                    </div>
+                </div>
+                
+                <div class="flex gap-3 pt-4">
+                    <button type="submit" 
+                            class="flex-1 py-2 px-4 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+                        حفظ
+                    </button>
+                    <button type="button" onclick="closeModal()"
+                            class="flex-1 py-2 px-4 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors">
+                        إلغاء
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openAddModal() {
+    document.getElementById('modalTitle').textContent = 'إضافة صنف جديد';
+    document.getElementById('productId').value = '';
+    document.getElementById('productName').value = '';
+    document.getElementById('productReceiptName').value = '';
+    document.getElementById('productNameEn').value = '';
+    document.getElementById('productBarcode').value = '';
+    document.getElementById('productCategory').value = '';
+    document.getElementById('productUnit').value = 'قطعة';
+    document.getElementById('productMinStock').value = '0';
+    document.getElementById('productNotes').value = '';
+    document.getElementById('productModal').classList.remove('hidden');
+}
+
+function openEditModal(id, name, receiptName, nameEn, barcode, categoryId, unit, minStock, notes) {
+    document.getElementById('modalTitle').textContent = 'تعديل الصنف';
+    document.getElementById('productId').value = id;
+    document.getElementById('productName').value = name;
+    document.getElementById('productReceiptName').value = receiptName;
+    document.getElementById('productNameEn').value = nameEn;
+    document.getElementById('productBarcode').value = barcode;
+    document.getElementById('productCategory').value = categoryId;
+    document.getElementById('productUnit').value = unit;
+    document.getElementById('productMinStock').value = minStock;
+    document.getElementById('productNotes').value = notes;
+    document.getElementById('productModal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('productModal').classList.add('hidden');
+}
+
+async function saveProduct(e) {
+    e.preventDefault();
+    
+    const id = document.getElementById('productId').value;
+    const data = {
+        name: document.getElementById('productName').value,
+        receipt_name: document.getElementById('productReceiptName').value,
+        name_en: document.getElementById('productNameEn').value,
+        barcode: document.getElementById('productBarcode').value,
+        category_id: document.getElementById('productCategory').value || null,
+        unit: document.getElementById('productUnit').value,
+        min_stock: parseFloat(document.getElementById('productMinStock').value) || 0,
+        notes: document.getElementById('productNotes').value,
+    };
+    
+    const url = id ? `/api/products/${id}` : '/api/products';
+    const method = id ? 'PUT' : 'POST';
+    
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            location.reload();
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الاتصال');
+    }
+}
+
+async function deleteProduct(id, name) {
+    if (!confirm(`هل أنت متأكد من حذف "${name}"؟`)) return;
+    
+    try {
+        const response = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+        const result = await response.json();
+        if (result.success) {
+            location.reload();
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الاتصال');
+    }
+}
+</script>
+{% endblock %}

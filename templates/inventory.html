@@ -1,0 +1,213 @@
+{% extends 'base.html' %}
+
+{% block title %}المخزون - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}المخزون{% endblock %}
+{% block page_subtitle %}متابعة المخزون الحالي{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-gray-800">{{ products|length }}</p>
+                    <p class="text-sm text-gray-500">إجمالي الأصناف</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-green-600">{{ stats.above_min }}</p>
+                    <p class="text-sm text-gray-500">فوق الحد الأدنى</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-red-600">{{ stats.below_min }}</p>
+                    <p class="text-sm text-gray-500">تحت الحد الأدنى</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-yellow-600">{{ stats.zero_stock }}</p>
+                    <p class="text-sm text-gray-500">نفذ من المخزون</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Inventory Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-4 border-b border-gray-100">
+            <input type="text" id="searchInput" placeholder="بحث..."
+                   class="w-full md:w-80 px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full table-hover">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">#</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الصنف</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">القسم</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الوحدة</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">المخزون الحالي</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الحد الأدنى</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الحالة</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">الحركات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for product in products %}
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ loop.index }}</td>
+                        <td class="px-6 py-4">
+                            <p class="font-medium text-gray-800">{{ product.name }}</p>
+                            {% if product.barcode %}
+                            <p class="text-sm text-gray-500 font-mono">{{ product.barcode }}</p>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ product.category_name or '-' }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ product.unit }}</td>
+                        <td class="px-6 py-4">
+                            <span class="text-lg font-bold {% if product.current_stock <= product.min_stock %}text-red-600{% elif product.current_stock == 0 %}text-yellow-600{% else %}text-green-600{% endif %}">
+                                {{ product.current_stock }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ product.min_stock }}</td>
+                        <td class="px-6 py-4">
+                            {% if product.current_stock == 0 %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                ⚠️ نفذ
+                            </span>
+                            {% elif product.current_stock <= product.min_stock %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                🔴 تحت الحد
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                🟢 متوفر
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <button onclick="showMovements({{ product.id }}, '{{ product.name }}')"
+                                    class="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors">
+                                📋 الحركات
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="px-6 py-12 text-center text-gray-500">
+                            لا توجد أصناف في المخزون
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Movements Modal -->
+<div id="movementsModal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="fixed inset-0 bg-black/50" onclick="closeMovementsModal()"></div>
+    <div class="min-h-full flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl relative my-8 max-h-[80vh] overflow-hidden flex flex-col">
+            <div class="p-6 border-b border-gray-200 flex items-center justify-between">
+                <h3 id="movementsTitle" class="text-xl font-bold text-gray-800">حركات الصنف</h3>
+                <button onclick="closeMovementsModal()" class="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div id="movementsContent" class="p-6 overflow-y-auto flex-1">
+                <!-- Movements will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Search functionality
+document.getElementById('searchInput').addEventListener('input', function(e) {
+    const search = e.target.value.toLowerCase();
+    document.querySelectorAll('tbody tr').forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(search) ? '' : 'none';
+    });
+});
+
+function closeMovementsModal() {
+    document.getElementById('movementsModal').classList.add('hidden');
+}
+
+async function showMovements(productId, productName) {
+    document.getElementById('movementsTitle').textContent = 'حركات: ' + productName;
+    document.getElementById('movementsContent').innerHTML = '<p class="text-center text-gray-500">جاري التحميل...</p>';
+    document.getElementById('movementsModal').classList.remove('hidden');
+    
+    try {
+        const response = await fetch('/api/inventory/movements/' + productId);
+        const data = await response.json();
+        
+        if (data.length === 0) {
+            document.getElementById('movementsContent').innerHTML = '<p class="text-center text-gray-500 py-8">لا توجد حركات لهذا الصنف</p>';
+            return;
+        }
+        
+        let html = '<table class="w-full"><thead class="bg-gray-50"><tr>';
+        html += '<th class="px-4 py-2 text-right text-sm">التاريخ</th>';
+        html += '<th class="px-4 py-2 text-right text-sm">النوع</th>';
+        html += '<th class="px-4 py-2 text-right text-sm">الكمية</th>';
+        html += '<th class="px-4 py-2 text-right text-sm">ملاحظات</th>';
+        html += '</tr></thead><tbody class="divide-y">';
+        
+        data.forEach(m => {
+            const typeLabel = m.movement_type === 'in' ? '⬆️ دخول' : m.movement_type === 'out' ? '⬇️ خروج' : '🔄 تعديل';
+            const typeColor = m.movement_type === 'in' ? 'text-green-600' : m.movement_type === 'out' ? 'text-red-600' : 'text-blue-600';
+            html += `<tr class="hover:bg-gray-50">
+                <td class="px-4 py-2 text-sm text-gray-600">${m.created_at || '-'}</td>
+                <td class="px-4 py-2 ${typeColor} font-medium">${typeLabel}</td>
+                <td class="px-4 py-2 font-bold">${m.quantity}</td>
+                <td class="px-4 py-2 text-sm text-gray-500">${m.notes || '-'}</td>
+            </tr>`;
+        });
+        
+        html += '</tbody></table>';
+        document.getElementById('movementsContent').innerHTML = html;
+        
+    } catch (error) {
+        document.getElementById('movementsContent').innerHTML = '<p class="text-center text-red-500">حدث خطأ في التحميل</p>';
+    }
+}
+</script>
+{% endblock %}

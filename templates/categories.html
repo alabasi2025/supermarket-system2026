@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+
+{% block title %}الأقسام - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}الأقسام{% endblock %}
+{% block page_subtitle %}إدارة أقسام وتصنيفات الأصناف{% endblock %}
+
+{% block header_actions %}
+<button onclick="openAddModal()" 
+        class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    <span>إضافة قسم</span>
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Info -->
+    <div class="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+        <p class="text-blue-800 text-sm">
+            <strong>💡 نصيحة:</strong>
+            أنشئ أقسام رئيسية أولاً (مثل: مشروبات، منظفات، حلويات)، ثم أضف أقسام فرعية لكل قسم رئيسي.
+        </p>
+    </div>
+    
+    <!-- Categories Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full table-hover">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">#</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">اسم القسم</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">القسم الرئيسي</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">عدد الأصناف</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الترتيب</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for category in categories %}
+                    <tr class="hover:bg-gray-50 transition-colors {% if category.parent_id %}bg-gray-50/50{% endif %}">
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ loop.index }}</td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-2">
+                                {% if category.parent_id %}
+                                <span class="text-gray-400 mr-4">↳</span>
+                                {% endif %}
+                                <span class="font-medium text-gray-800 {% if not category.parent_id %}text-lg{% endif %}">
+                                    {{ category.name }}
+                                </span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">
+                            {% if category.parent_name %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                {{ category.parent_name }}
+                            </span>
+                            {% else %}
+                            <span class="text-primary-600 font-medium">قسم رئيسي</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {{ category.products_count }} صنف
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ category.sort_order }}</td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="openEditModal({{ category.id }}, '{{ category.name }}', '{{ category.parent_id or '' }}', {{ category.sort_order }})"
+                                        class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="تعديل">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                </button>
+                                <button onclick="deleteCategory({{ category.id }}, '{{ category.name }}')"
+                                        class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="حذف">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center">
+                            <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                            </svg>
+                            <p class="text-gray-500 mb-4">لا توجد أقسام بعد</p>
+                            <button onclick="openAddModal()" 
+                                    class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700">
+                                إضافة قسم جديد
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div id="categoryModal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="fixed inset-0 bg-black/50" onclick="closeModal()"></div>
+    <div class="min-h-full flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative my-8">
+            <div class="p-6 border-b border-gray-200">
+                <h3 id="modalTitle" class="text-xl font-bold text-gray-800">إضافة قسم جديد</h3>
+            </div>
+            <form id="categoryForm" onsubmit="saveCategory(event)" class="p-6 space-y-4">
+                <input type="hidden" id="categoryId" value="">
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">اسم القسم *</label>
+                    <input type="text" id="categoryName" required
+                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                           placeholder="مثال: مشروبات غازية">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">القسم الرئيسي (اختياري)</label>
+                    <select id="categoryParent"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="">-- قسم رئيسي (بدون أب) --</option>
+                        {% for category in categories %}
+                        {% if not category.parent_id %}
+                        <option value="{{ category.id }}">{{ category.name }}</option>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">اتركه فارغاً إذا كان هذا قسم رئيسي</p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">الترتيب</label>
+                    <input type="number" id="categorySortOrder" min="0" value="0"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    <p class="text-xs text-gray-500 mt-1">رقم أصغر = يظهر أولاً</p>
+                </div>
+                
+                <div class="flex gap-3 pt-4">
+                    <button type="submit" 
+                            class="flex-1 py-2 px-4 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+                        حفظ
+                    </button>
+                    <button type="button" onclick="closeModal()"
+                            class="flex-1 py-2 px-4 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors">
+                        إلغاء
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openAddModal() {
+    document.getElementById('modalTitle').textContent = 'إضافة قسم جديد';
+    document.getElementById('categoryId').value = '';
+    document.getElementById('categoryName').value = '';
+    document.getElementById('categoryParent').value = '';
+    document.getElementById('categorySortOrder').value = '0';
+    document.getElementById('categoryModal').classList.remove('hidden');
+}
+
+function openEditModal(id, name, parentId, sortOrder) {
+    document.getElementById('modalTitle').textContent = 'تعديل القسم';
+    document.getElementById('categoryId').value = id;
+    document.getElementById('categoryName').value = name;
+    document.getElementById('categoryParent').value = parentId;
+    document.getElementById('categorySortOrder').value = sortOrder;
+    document.getElementById('categoryModal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('categoryModal').classList.add('hidden');
+}
+
+async function saveCategory(e) {
+    e.preventDefault();
+    
+    const id = document.getElementById('categoryId').value;
+    const data = {
+        name: document.getElementById('categoryName').value,
+        parent_id: document.getElementById('categoryParent').value || null,
+        sort_order: parseInt(document.getElementById('categorySortOrder').value) || 0,
+    };
+    
+    const url = id ? `/api/categories/${id}` : '/api/categories';
+    const method = id ? 'PUT' : 'POST';
+    
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            location.reload();
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الاتصال');
+    }
+}
+
+async function deleteCategory(id, name) {
+    if (!confirm(`هل أنت متأكد من حذف "${name}"؟`)) return;
+    
+    try {
+        const response = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+        const result = await response.json();
+        if (result.success) {
+            location.reload();
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الاتصال');
+    }
+}
+</script>
+{% endblock %}

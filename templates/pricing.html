@@ -1,0 +1,157 @@
+{% extends 'base.html' %}
+
+{% block title %}تسعيرات البيع - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}تسعيرات البيع{% endblock %}
+{% block page_subtitle %}إدارة أسعار البيع المتعددة{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Info -->
+    <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-6">
+        <div class="flex items-start gap-4">
+            <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                </svg>
+            </div>
+            <div>
+                <h3 class="font-bold text-yellow-800 mb-1">تسعيرات متعددة</h3>
+                <p class="text-yellow-700 text-sm">
+                    يمكنك تحديد عدة أسعار لنفس الصنف:
+                    <strong>سعر المفرق</strong> للعملاء العاديين،
+                    <strong>سعر الجملة</strong> للكميات الكبيرة،
+                    و<strong>سعر خاص</strong> لعملاء محددين.
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Price Lists -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {% for price_list in price_lists %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 {% if price_list.is_default %}ring-2 ring-primary-500{% endif %}">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-bold text-gray-800">{{ price_list.name }}</h3>
+                {% if price_list.is_default %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
+                    الافتراضي
+                </span>
+                {% endif %}
+            </div>
+            <p class="text-sm text-gray-500">{{ price_list.description or 'بدون وصف' }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <!-- Pricing Form -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">تحديد سعر صنف</h3>
+        <form id="pricingForm" onsubmit="saveProductPrice(event)" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">الصنف</label>
+                <select id="productId" required
+                        class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                    <option value="">-- اختر الصنف --</option>
+                    {% for product in products %}
+                    <option value="{{ product.id }}">{{ product.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">قائمة الأسعار</label>
+                <select id="priceListId" required
+                        class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                    {% for price_list in price_lists %}
+                    <option value="{{ price_list.id }}">{{ price_list.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">السعر</label>
+                <input type="number" id="price" required min="0" step="0.01"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+                       placeholder="0.00">
+            </div>
+            <div class="flex items-end">
+                <button type="submit" 
+                        class="w-full py-2 px-4 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+                    حفظ
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Prices Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100">
+            <h3 class="text-lg font-bold text-gray-800">الأسعار المحددة</h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الصنف</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">قائمة الأسعار</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">السعر</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for price in prices %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 font-medium text-gray-800">{{ price.product_name }}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                {{ price.price_list_name }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 font-bold text-primary-600">{{ "{:,.0f}".format(price.price) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="px-6 py-12 text-center text-gray-500">
+                            لا توجد أسعار محددة بعد
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function saveProductPrice(e) {
+    e.preventDefault();
+    
+    const data = {
+        product_id: parseInt(document.getElementById('productId').value),
+        price_list_id: parseInt(document.getElementById('priceListId').value),
+        price: parseFloat(document.getElementById('price').value),
+    };
+    
+    if (!data.product_id || !data.price_list_id || !data.price) {
+        alert('يرجى ملء جميع الحقول');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/product-prices', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            location.reload();
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الاتصال');
+    }
+}
+</script>
+{% endblock %}

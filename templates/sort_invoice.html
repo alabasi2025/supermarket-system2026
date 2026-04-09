@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+
+{% block title %}فرز الفاتورة{% endblock %}
+
+{% block page_title %}فرز الفاتورة{% endblock %}
+{% block page_subtitle %}{{ invoice.invoice_number }} - {{ invoice.supplier_name }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Invoice Info -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+                <p class="text-sm text-gray-500">رقم الفاتورة</p>
+                <p class="font-bold text-primary-600">{{ invoice.invoice_number }}</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-500">المورد</p>
+                <p class="font-bold text-gray-800">{{ invoice.supplier_name }}</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-500">التاريخ</p>
+                <p class="font-medium text-gray-800">{{ invoice.invoice_date }}</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-500">الإجمالي</p>
+                <p class="font-bold text-gray-800">{{ "{:,.0f}".format(invoice.total_amount) }}</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Info -->
+    <div class="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+        <p class="text-blue-800 text-sm">
+            <strong>📦 الفرز:</strong>
+            فرّز كل صنف من المورد إلى الأصناف الفعلية عندك.
+            مثال: "كرتون شيبس ليز" يتفرز إلى: شيبس مالح 20 + شيبس جبن 15 + شيبس حار 13 = 48 قطعة.
+        </p>
+    </div>
+    
+    <!-- Items to Sort -->
+    <div class="space-y-4">
+        {% for item in items %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-4 bg-gray-50 border-b border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-bold text-gray-800">{{ item.supplier_product_name }}</h3>
+                        <p class="text-sm text-gray-500">{{ item.product_name }}</p>
+                    </div>
+                    <div class="text-left">
+                        <p class="text-sm text-gray-500">الكمية</p>
+                        <p class="text-xl font-bold text-primary-600">{{ item.quantity }}</p>
+                        <p class="text-xs text-gray-500">× {{ item.pack_size or 1 }} = {{ (item.quantity * (item.pack_size or 1))|int }} قطعة</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-4">
+                {% if item.allowed_products %}
+                <p class="text-sm text-gray-600 mb-3">فرّز إلى:</p>
+                <div class="space-y-2">
+                    {% for allowed in item.allowed_products %}
+                    <div class="flex items-center gap-4 p-3 bg-gray-50 rounded-xl">
+                        <span class="flex-1 font-medium text-gray-800">{{ allowed.product_name }}</span>
+                        <input type="number" min="0" value="0"
+                               class="w-24 px-3 py-2 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-primary-500"
+                               data-item="{{ item.id }}" data-product="{{ allowed.allowed_product_id }}">
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="flex items-center gap-4 p-3 bg-gray-50 rounded-xl">
+                    <span class="flex-1 font-medium text-gray-800">{{ item.product_name }}</span>
+                    <input type="number" min="0" value="{{ (item.quantity * (item.pack_size or 1))|int }}"
+                           class="w-24 px-3 py-2 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-primary-500"
+                           data-item="{{ item.id }}" data-product="{{ item.product_id }}">
+                </div>
+                <p class="text-xs text-gray-500 mt-2">
+                    💡 لم يتم تحديد قواعد فرز لهذا الصنف. سيتم فرزه كاملاً للصنف المربوط.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <!-- Actions -->
+    <div class="flex gap-4">
+        <button onclick="saveSorting()"
+                class="flex-1 py-3 px-6 bg-primary-600 text-white font-medium rounded-xl hover:bg-primary-700 transition-colors">
+            💾 حفظ الفرز
+        </button>
+        <a href="{{ url_for('agent_invoices') }}"
+           class="py-3 px-6 bg-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-300 transition-colors">
+            إلغاء
+        </a>
+    </div>
+</div>
+
+<script>
+async function saveSorting() {
+    const items = [];
+    document.querySelectorAll('input[data-item]').forEach(input => {
+        const quantity = parseInt(input.value) || 0;
+        if (quantity > 0) {
+            items.push({
+                supplier_invoice_item_id: parseInt(input.dataset.item),
+                product_id: parseInt(input.dataset.product),
+                quantity: quantity
+            });
+        }
+    });
+    
+    if (items.length === 0) {
+        alert('يرجى إدخال كميات الفرز');
+        return;
+    }
+    
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert('✅ تم حفظ الفرز بنجاح');
+            window.location.href = '/agent-invoices';
+        } else {
+            alert('❌ ' + (result.message || 'حدث خطأ'));
+        }
+    } catch (error) {
+        alert('حدث خطأ في الاتصال');
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,235 @@
+{% extends 'base.html' %}
+
+{% block title %}الرئيسية - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}لوحة التحكم{% endblock %}
+{% block page_subtitle %}نظرة عامة على النظام{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        
+        <!-- الموردين -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-gray-800">{{ stats.suppliers }}</p>
+                    <p class="text-sm text-gray-500">مورد</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- الأصناف -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-gray-800">{{ stats.products }}</p>
+                    <p class="text-sm text-gray-500">صنف</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- تحت الحد الأدنى -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-red-600">{{ stats.low_stock }}</p>
+                    <p class="text-sm text-gray-500">تحت الحد الأدنى</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- فواتير معلقة -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-yellow-600">{{ stats.pending_invoices }}</p>
+                    <p class="text-sm text-gray-500">فواتير معلقة</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- بانتظار الاستلام -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-purple-600">{{ stats.pending_receive }}</p>
+                    <p class="text-sm text-gray-500">بانتظار الاستلام</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Two Columns -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- آخر الفواتير -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-6 border-b border-gray-100">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-bold text-gray-800">آخر الفواتير</h2>
+                    <a href="{{ url_for('supplier_invoices') }}" class="text-sm text-primary-600 hover:text-primary-700">
+                        عرض الكل ←
+                    </a>
+                </div>
+            </div>
+            <div class="divide-y divide-gray-100">
+                {% for invoice in recent_invoices %}
+                <div class="p-4 hover:bg-gray-50 transition-colors">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="font-medium text-gray-800">{{ invoice.invoice_number }}</p>
+                            <p class="text-sm text-gray-500">{{ invoice.supplier_name }}</p>
+                        </div>
+                        <div class="text-left">
+                            <p class="font-bold text-gray-800">{{ "{:,.0f}".format(invoice.total_amount) }}</p>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+                                {% if invoice.status == 'pending' %}bg-yellow-100 text-yellow-800
+                                {% elif invoice.status == 'sorting' %}bg-blue-100 text-blue-800
+                                {% elif invoice.status == 'delivered' %}bg-purple-100 text-purple-800
+                                {% else %}bg-green-100 text-green-800{% endif %}">
+                                {% if invoice.status == 'pending' %}معلقة
+                                {% elif invoice.status == 'sorting' %}جاري الفرز
+                                {% elif invoice.status == 'delivered' %}تم التسليم
+                                {% else %}تم الاستلام{% endif %}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="p-8 text-center text-gray-500">
+                    <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <p>لا توجد فواتير بعد</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- أصناف تحت الحد الأدنى -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-6 border-b border-gray-100">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-bold text-gray-800">⚠️ أصناف تحت الحد الأدنى</h2>
+                    <a href="{{ url_for('inventory') }}" class="text-sm text-primary-600 hover:text-primary-700">
+                        عرض الكل ←
+                    </a>
+                </div>
+            </div>
+            <div class="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                {% for item in low_stock_items %}
+                <div class="p-4 hover:bg-red-50 transition-colors">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="font-medium text-gray-800">{{ item.name }}</p>
+                            <p class="text-sm text-gray-500">{{ item.category_name or 'بدون قسم' }}</p>
+                        </div>
+                        <div class="text-left">
+                            <p class="font-bold text-red-600">{{ item.current_stock }} {{ item.unit }}</p>
+                            <p class="text-xs text-gray-500">الحد الأدنى: {{ item.min_stock }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="p-8 text-center text-gray-500">
+                    <svg class="w-12 h-12 mx-auto text-green-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p class="text-green-600">جميع الأصناف فوق الحد الأدنى 👍</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 class="text-lg font-bold text-gray-800 mb-4">إجراءات سريعة</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            
+            <a href="{{ url_for('new_supplier_invoice') }}" 
+               class="flex flex-col items-center gap-3 p-4 rounded-xl bg-gradient-to-br from-primary-50 to-primary-100 
+                      hover:from-primary-100 hover:to-primary-200 transition-all group">
+                <div class="w-12 h-12 bg-primary-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                </div>
+                <span class="text-sm font-medium text-primary-800">فاتورة جديدة</span>
+            </a>
+            
+            <a href="{{ url_for('products') }}" 
+               class="flex flex-col items-center gap-3 p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 
+                      hover:from-blue-100 hover:to-blue-200 transition-all group">
+                <div class="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                    </svg>
+                </div>
+                <span class="text-sm font-medium text-blue-800">إضافة صنف</span>
+            </a>
+            
+            <a href="{{ url_for('warehouse') }}" 
+               class="flex flex-col items-center gap-3 p-4 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 
+                      hover:from-purple-100 hover:to-purple-200 transition-all group">
+                <div class="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                    </svg>
+                </div>
+                <span class="text-sm font-medium text-purple-800">استلام بضاعة</span>
+            </a>
+            
+            <a href="{{ url_for('reports') }}" 
+               class="flex flex-col items-center gap-3 p-4 rounded-xl bg-gradient-to-br from-yellow-50 to-yellow-100 
+                      hover:from-yellow-100 hover:to-yellow-200 transition-all group">
+                <div class="w-12 h-12 bg-yellow-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <span class="text-sm font-medium text-yellow-800">التقارير</span>
+            </a>
+        </div>
+    </div>
+    
+</div>
+{% endblock %}

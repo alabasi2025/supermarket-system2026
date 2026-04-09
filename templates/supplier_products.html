@@ -1,0 +1,237 @@
+{% extends 'base.html' %}
+
+{% block title %}ربط الأسماء - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}ربط أسماء المورد{% endblock %}
+{% block page_subtitle %}ربط أسماء أصناف المورد بأسمائك الداخلية{% endblock %}
+
+{% block header_actions %}
+<button onclick="openAddModal()" 
+        class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    <span>ربط صنف جديد</span>
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Info Card -->
+    <div class="bg-blue-50 border border-blue-200 rounded-2xl p-6">
+        <div class="flex items-start gap-4">
+            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div>
+                <h3 class="font-bold text-blue-800 mb-1">ما هو ربط الأسماء؟</h3>
+                <p class="text-blue-700 text-sm">
+                    المورد يسمي الصنف بطريقته (مثل "Lays Classic 24s")، وأنت تسميه بطريقتك (مثل "شيبس ليز كلاسيك").
+                    هنا تربط بينهما حتى يتعرف النظام على الصنف عند استيراد فواتير المورد.
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Filter -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1">
+                <select id="supplierFilter" onchange="filterBySupplier(this.value)"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                    <option value="">كل الموردين</option>
+                    {% for supplier in suppliers %}
+                    <option value="{{ supplier.id }}" {% if selected_supplier == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Items Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full table-hover">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">#</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">المورد</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">اسم المورد للصنف</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">↔</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">اسمك للصنف</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">عدد القطع/العبوة</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">إعدادات الفرز</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for item in items %}
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ loop.index }}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                {{ item.supplier_name }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 font-medium text-gray-800">{{ item.supplier_product_name }}</td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="text-primary-500 text-xl">↔</span>
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="font-medium text-primary-700">{{ item.product_name }}</span>
+                            {% if item.sorting_count and item.sorting_count > 1 %}
+                            <span class="text-xs text-gray-500 block">+ {{ item.sorting_count - 1 }} أصناف أخرى</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-center text-gray-600">{{ item.pack_size or 1 }} قطعة</td>
+                        <td class="px-6 py-4 text-center">
+                            <button onclick="openSortingRules({{ item.id }}, '{{ item.supplier_product_name }}')"
+                                    class="px-3 py-1.5 bg-purple-100 text-purple-700 text-sm rounded-lg hover:bg-purple-200 transition-colors">
+                                ⚙️ {{ item.sorting_count or 1 }} أصناف
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center">
+                            <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                            </svg>
+                            <p class="text-gray-500 mb-4">لا توجد أصناف مربوطة بعد</p>
+                            <button onclick="openAddModal()" 
+                                    class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700">
+                                ربط صنف جديد
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+    <div class="fixed inset-0 bg-black/50" onclick="closeModal()"></div>
+    <div class="min-h-full flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative my-8">
+            <div class="p-6 border-b border-gray-200">
+                <h3 class="text-xl font-bold text-gray-800">ربط صنف جديد</h3>
+            </div>
+            <form id="addForm" onsubmit="saveMapping(event)" class="p-6 space-y-4">
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">المورد *</label>
+                    <select id="supplierId" required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                        <option value="">-- اختر المورد --</option>
+                        {% for supplier in suppliers %}
+                        <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">اسم الصنف عند المورد *</label>
+                    <input type="text" id="supplierProductName" required
+                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+                           placeholder="مثال: Lays Classic 24s">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">عدد القطع في العبوة/الكرتون</label>
+                    <input type="number" id="packSize" min="1" value="1"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+                           placeholder="مثال: 48 قطعة في الكرتون">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">الأصناف المسموح فرزها من هذا الصنف *</label>
+                    <p class="text-xs text-gray-500 mb-2">اختر كل الأصناف التي يمكن أن يتفرز لها هذا الكرتون</p>
+                    <div class="max-h-48 overflow-y-auto border border-gray-300 rounded-xl p-2 space-y-1">
+                        {% for product in products %}
+                        <label class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-lg cursor-pointer">
+                            <input type="checkbox" name="allowedProducts" value="{{ product.id }}"
+                                   class="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500">
+                            <span class="text-sm text-gray-700">{{ product.name }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="flex gap-3 pt-4">
+                    <button type="submit" 
+                            class="flex-1 py-2 px-4 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+                        حفظ
+                    </button>
+                    <button type="button" onclick="closeModal()"
+                            class="flex-1 py-2 px-4 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors">
+                        إلغاء
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function filterBySupplier(supplierId) {
+    const url = supplierId ? `/supplier-products?supplier_id=${supplierId}` : '/supplier-products';
+    window.location.href = url;
+}
+
+function openAddModal() {
+    document.getElementById('addModal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('addModal').classList.add('hidden');
+}
+
+async function saveMapping(e) {
+    e.preventDefault();
+    
+    // جمع الأصناف المحددة
+    const allowedProducts = [];
+    document.querySelectorAll('input[name="allowedProducts"]:checked').forEach(cb => {
+        allowedProducts.push(parseInt(cb.value));
+    });
+    
+    if (allowedProducts.length === 0) {
+        alert('يرجى اختيار صنف واحد على الأقل من الأصناف المسموح فرزها');
+        return;
+    }
+    
+    const data = {
+        supplier_id: parseInt(document.getElementById('supplierId').value),
+        supplier_product_name: document.getElementById('supplierProductName').value,
+        pack_size: parseInt(document.getElementById('packSize').value) || 1,
+        allowed_products: allowedProducts,
+    };
+    
+    try {
+        const response = await fetch('/api/supplier-products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            location.reload();
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الاتصال');
+    }
+}
+
+function openSortingRules(id, name) {
+    alert(`إعدادات الفرز لـ "${name}"\n\nهذه الميزة قيد التطوير...`);
+}
+</script>
+{% endblock %}

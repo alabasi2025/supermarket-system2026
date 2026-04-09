@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+
+{% block title %}فاتورة المندوب - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}فاتورة المندوب{% endblock %}
+{% block page_subtitle %}فرز وتسليم البضاعة{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Pending Sorting -->
+    {% if pending %}
+    <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-6">
+        <div class="flex items-center gap-4 mb-4">
+            <div class="w-12 h-12 bg-yellow-500 rounded-xl flex items-center justify-center">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div>
+                <h2 class="text-lg font-bold text-yellow-800">فواتير بانتظار الفرز</h2>
+                <p class="text-sm text-yellow-700">{{ pending|length }} فاتورة تحتاج فرز</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for invoice in pending %}
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="font-bold text-primary-600">{{ invoice.invoice_number }}</span>
+                    <span class="text-sm text-gray-500">{{ invoice.invoice_date }}</span>
+                </div>
+                <p class="font-medium text-gray-800 mb-3">{{ invoice.supplier_name }}</p>
+                <a href="{{ url_for('sort_invoice', supplier_invoice_id=invoice.id) }}"
+                   class="block w-full py-2 px-4 bg-blue-600 text-white text-center rounded-lg hover:bg-blue-700 transition-colors">
+                    📦 فرز الفاتورة
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Agent Invoices -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100">
+            <h2 class="text-lg font-bold text-gray-800">فواتير المندوب</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">فاتورة المورد</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">المورد</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">المندوب</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الحالة</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">تاريخ التسليم</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for invoice in invoices %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 font-bold text-primary-600">{{ invoice.invoice_number }}</td>
+                        <td class="px-6 py-4 font-medium text-gray-800">{{ invoice.supplier_name }}</td>
+                        <td class="px-6 py-4 text-gray-600">{{ invoice.agent_name }}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
+                                {% if invoice.status == 'draft' %}bg-gray-100 text-gray-800
+                                {% elif invoice.status == 'submitted' %}bg-blue-100 text-blue-800
+                                {% else %}bg-green-100 text-green-800{% endif %}">
+                                {% if invoice.status == 'draft' %}📝 مسودة
+                                {% elif invoice.status == 'submitted' %}🚚 تم التسليم
+                                {% else %}✅ تم الاستلام{% endif %}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-gray-600">{{ invoice.submitted_at[:10] if invoice.submitted_at else '-' }}</td>
+                        <td class="px-6 py-4 text-center">
+                            {% if invoice.status == 'draft' %}
+                            <button onclick="submitInvoice({{ invoice.id }})"
+                                    class="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors">
+                                📤 تسليم للمخزن
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-gray-500">
+                            لا توجد فواتير مندوب بعد
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function submitInvoice(id) {
+    if (!confirm('هل أنت متأكد من تسليم هذه الفاتورة للمخزن؟')) return;
+    
+    try {
+        const response = await fetch(`/api/agent-invoices/${id}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert('✅ ' + result.message);
+            location.reload();
+        } else {
+            alert('❌ ' + (result.message || 'حدث خطأ'));
+        }
+    } catch (error) {
+        alert('حدث خطأ في الاتصال');
+    }
+}
+</script>
+{% endblock %}
