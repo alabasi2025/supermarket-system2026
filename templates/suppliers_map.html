@@ -1,0 +1,949 @@
+{% extends 'base.html' %}
+
+{% block title %}الخرائط - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}الخرائط{% endblock %}
+{% block page_subtitle %}عرض مواقع الموردين والمخازن والفروع على الخريطة{% endblock %}
+
+{% block header_actions %}
+<div class="flex gap-2 flex-wrap">
+    <!-- زر إضافة موقع جديد مع قائمة منسدلة -->
+    <div class="relative" id="addLocationDropdown">
+        <button onclick="toggleAddDropdown()" 
+           class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition-all shadow-sm">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            <span>إضافة موقع</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+        <div id="addDropdownMenu" class="hidden absolute left-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden">
+            <button onclick="openAddModal('supplier')" class="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 text-gray-700 transition-colors">
+                <span class="w-3 h-3 bg-red-500 rounded-full"></span>
+                <span>مورد جديد</span>
+            </button>
+            <button onclick="openAddModal('competitor')" class="w-full flex items-center gap-3 px-4 py-3 hover:bg-orange-50 text-gray-700 transition-colors">
+                <span class="w-3 h-3 bg-orange-500 rounded-full"></span>
+                <span>منافس جديد</span>
+            </button>
+            <button onclick="openAddModal('warehouse')" class="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-50 text-gray-700 transition-colors">
+                <span class="w-3 h-3 bg-blue-500 rounded-full"></span>
+                <span>مخزن جديد</span>
+            </button>
+            <button onclick="openAddModal('store')" class="w-full flex items-center gap-3 px-4 py-3 hover:bg-green-50 text-gray-700 transition-colors">
+                <span class="w-3 h-3 bg-green-500 rounded-full"></span>
+                <span>فرع جديد</span>
+            </button>
+            <button onclick="openAddModal('employee')" class="w-full flex items-center gap-3 px-4 py-3 hover:bg-purple-50 text-gray-700 transition-colors">
+                <span class="w-3 h-3 bg-purple-500 rounded-full"></span>
+                <span>موظف جديد</span>
+            </button>
+        </div>
+    </div>
+</div>
+<script>
+function toggleAddDropdown() {
+    document.getElementById('addDropdownMenu').classList.toggle('hidden');
+}
+document.addEventListener('click', function(e) {
+    if (!document.getElementById('addLocationDropdown').contains(e.target)) {
+        document.getElementById('addDropdownMenu').classList.add('hidden');
+    }
+});
+</script>
+{% endblock %}
+
+{% block content %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    #suppliersMap {
+        height: calc(100vh - 280px);
+        min-height: 450px;
+        border-radius: 1rem;
+        z-index: 1;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .leaflet-container {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+    }
+    .leaflet-control-layers {
+        border-radius: 12px !important;
+        border: none !important;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.15) !important;
+    }
+    .leaflet-control-zoom {
+        border: none !important;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.15) !important;
+    }
+    .leaflet-control-zoom a {
+        border-radius: 8px !important;
+        width: 36px !important;
+        height: 36px !important;
+        line-height: 36px !important;
+        font-size: 18px !important;
+    }
+    .leaflet-control-zoom-in {
+        border-radius: 8px 8px 0 0 !important;
+    }
+    .leaflet-control-zoom-out {
+        border-radius: 0 0 8px 8px !important;
+    }
+    
+    /* Modern Popup Styling */
+    .leaflet-popup-content-wrapper {
+        border-radius: 16px !important;
+        padding: 0 !important;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2) !important;
+        overflow: hidden;
+    }
+    .leaflet-popup-content {
+        margin: 0 !important;
+        min-width: 200px;
+    }
+    .leaflet-popup-tip {
+        box-shadow: 0 3px 10px rgba(0,0,0,0.1) !important;
+    }
+    
+    .map-popup {
+        padding: 0;
+    }
+    .map-popup-header {
+        padding: 16px;
+        color: white;
+        text-align: center;
+    }
+    .map-popup-header.supplier { background: linear-gradient(135deg, #ef4444, #dc2626); }
+    .map-popup-header.competitor { background: linear-gradient(135deg, #f97316, #ea580c); }
+    .map-popup-header.warehouse { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+    .map-popup-header.store { background: linear-gradient(135deg, #22c55e, #16a34a); }
+    .map-popup-header.employee { background: linear-gradient(135deg, #a855f7, #9333ea); }
+    
+    .map-popup-header h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+    .map-popup-header .icon {
+        font-size: 1.5rem;
+    }
+    .map-popup-body {
+        padding: 12px 16px;
+        background: white;
+    }
+    .map-popup-body p {
+        margin: 6px 0;
+        font-size: 0.9rem;
+        color: #4b5563;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .map-popup-footer {
+        padding: 12px 16px;
+        background: #f9fafb;
+        border-top: 1px solid #e5e7eb;
+        text-align: center;
+    }
+    .map-popup-footer a {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+        color: white;
+        border-radius: 8px;
+        text-decoration: none;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+    .map-popup-footer a:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+    
+    /* Custom Marker Animation */
+    .custom-div-icon {
+        background: transparent;
+        border: none;
+    }
+    .marker-pin {
+        width: 36px;
+        height: 36px;
+        border-radius: 50% 50% 50% 0;
+        position: relative;
+        transform: rotate(-45deg);
+        border: 4px solid white;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        transition: all 0.3s ease;
+    }
+    .marker-pin:hover {
+        transform: rotate(-45deg) scale(1.1);
+    }
+    .marker-pin::after {
+        content: '';
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: white;
+        border-radius: 50%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+    
+    /* Pulse animation for markers */
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(0,0,0,0.3); }
+        70% { box-shadow: 0 0 0 15px rgba(0,0,0,0); }
+        100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+    }
+</style>
+
+<div class="space-y-4">
+    <!-- Filter Bar -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+            <!-- Map Mode & Filters -->
+            <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
+                <span id="mapMode" class="px-3 py-1.5 bg-gradient-to-r from-gray-100 to-gray-50 text-gray-700 rounded-xl text-sm font-medium shadow-sm">⏳ جاري التحميل...</span>
+                
+                <!-- Filter Toggles -->
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 w-full sm:w-auto">
+                    <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-red-50 hover:bg-red-100 rounded-xl transition-colors border border-red-100">
+                        <input type="checkbox" id="showSuppliers" checked onchange="toggleLayer('suppliers')" class="w-4 h-4 text-red-500 rounded accent-red-500">
+                        <span class="w-2.5 h-2.5 bg-red-500 rounded-full"></span>
+                        <span class="text-sm font-medium text-red-700">الموردين <span id="suppliersCount" class="text-red-500">0</span></span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-orange-50 hover:bg-orange-100 rounded-xl transition-colors border border-orange-100">
+                        <input type="checkbox" id="showCompetitors" checked onchange="toggleLayer('competitors')" class="w-4 h-4 text-orange-500 rounded accent-orange-500">
+                        <span class="w-2.5 h-2.5 bg-orange-500 rounded-full"></span>
+                        <span class="text-sm font-medium text-orange-700">المنافسين <span id="competitorsCount" class="text-orange-500">0</span></span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-100">
+                        <input type="checkbox" id="showWarehouses" checked onchange="toggleLayer('warehouses')" class="w-4 h-4 text-blue-500 rounded accent-blue-500">
+                        <span class="w-2.5 h-2.5 bg-blue-500 rounded-full"></span>
+                        <span class="text-sm font-medium text-blue-700">المخازن <span id="warehousesCount" class="text-blue-500">0</span></span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-green-50 hover:bg-green-100 rounded-xl transition-colors border border-green-100">
+                        <input type="checkbox" id="showStores" checked onchange="toggleLayer('stores')" class="w-4 h-4 text-green-500 rounded accent-green-500">
+                        <span class="w-2.5 h-2.5 bg-green-500 rounded-full"></span>
+                        <span class="text-sm font-medium text-green-700">الفروع <span id="storesCount" class="text-green-500">0</span></span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors border border-purple-100">
+                        <input type="checkbox" id="showEmployees" checked onchange="toggleLayer('employees')" class="w-4 h-4 text-purple-500 rounded accent-purple-500">
+                        <span class="w-2.5 h-2.5 bg-purple-500 rounded-full"></span>
+                        <span class="text-sm font-medium text-purple-700">الموظفين <span id="employeesCount" class="text-purple-500">0</span></span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="flex gap-2 flex-wrap">
+                <button onclick="locateMe()" class="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-xl text-sm font-medium hover:from-rose-600 hover:to-pink-700 shadow-sm transition-all animate-pulse hover:animate-none">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3-1.343 3-3-1.343-3-3-3z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2v2m0 16v2M2 12h2m16 0h2m-4.93-7.07l-1.41 1.41m-9.32 9.32l-1.41 1.41m0-12.14l1.41 1.41m9.32 9.32l1.41 1.41"/></svg>
+                    📍 موقعي
+                </button>
+                <button onclick="zoomToAll()" class="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl text-sm font-medium hover:from-blue-600 hover:to-blue-700 shadow-sm transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/></svg>
+                    عرض الكل
+                </button>
+                <button onclick="zoomToSanaa()" class="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl text-sm font-medium hover:from-emerald-600 hover:to-emerald-700 shadow-sm transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    صنعاء
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Map Container -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div id="suppliersMap"></div>
+    </div>
+    
+    <!-- Suppliers without location -->
+    {% set unmapped = suppliers|selectattr('latitude', 'none')|list %}
+    {% if unmapped %}
+    <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-4">
+        <h3 class="font-bold text-yellow-800 mb-2">⚠️ موردين بدون موقع محدد:</h3>
+        <div class="flex flex-wrap gap-2">
+            {% for s in unmapped %}
+            <span class="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm">{{ s.name }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// Sanaa, Yemen coordinates
+const SANAA_LAT = 15.3694;
+const SANAA_LNG = 44.1910;
+
+// Initialize map centered on Sanaa
+const map = L.map('suppliersMap', {
+    zoomControl: true,
+    scrollWheelZoom: true,
+}).setView([SANAA_LAT, SANAA_LNG], 13);
+
+// خريطة أوفلاين محلية (إذا تم تحميلها)
+const offlineLocal = L.tileLayer('/static/map_tiles/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap (أوفلاين)',
+    maxZoom: 17,
+    minZoom: 13,
+});
+
+// ============ خرائط القمر الصناعي - الأحدث ============
+
+// Google Satellite - محدث باستمرار
+const googleSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+    attribution: '© Google 2024',
+    maxZoom: 22,
+    maxNativeZoom: 20,
+});
+
+// Google Hybrid - قمر صناعي + أسماء
+const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+    attribution: '© Google 2024',
+    maxZoom: 22,
+    maxNativeZoom: 20,
+});
+
+// Bing Satellite - صور Microsoft الأحدث
+const bingSatellite = L.tileLayer('https://ecn.t{s}.tiles.virtualearth.net/tiles/a{q}.jpeg?g=14170', {
+    attribution: '© Microsoft Bing 2024',
+    maxZoom: 21,
+    subdomains: '0123',
+    quadKey: true,
+});
+
+// Esri World Imagery - Clarity (أحدث صور متاحة)
+const esriClarity = L.tileLayer('https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '© Esri Clarity 2024',
+    maxZoom: 22,
+});
+
+// Esri World Imagery - Standard
+const esriSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '© Esri, Maxar 2024',
+    maxZoom: 22,
+    maxNativeZoom: 19,
+});
+
+// Esri + Labels
+const esriSatelliteLabels = L.layerGroup([
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 22,
+        maxNativeZoom: 19,
+    }),
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 22,
+    })
+]);
+
+// Yandex Satellite - صور روسية حديثة
+const yandexSatellite = L.tileLayer('https://sat0{s}.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}', {
+    attribution: '© Yandex 2024',
+    maxZoom: 19,
+    subdomains: '1234',
+});
+
+// ============ خرائط الشوارع ============
+
+// Esri World Street Map
+const esriStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '© Esri',
+    maxZoom: 19,
+});
+
+// OpenStreetMap
+const osmStandard = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19,
+});
+
+// CartoDB Voyager
+const cartoVoyager = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap, © CARTO',
+    maxZoom: 19,
+    subdomains: 'abcd',
+});
+
+// افتراضياً: Google Satellite
+googleSatellite.addTo(map);
+document.getElementById('mapMode').textContent = '🛰️ قمر صناعي HD';
+
+// Layer control - قمر صناعي فقط أولاً
+const baseMaps = {
+    "🛰️ Google HD (الأحدث)": googleSatellite,
+    "🛰️ Google هجين": googleHybrid,
+    "🛰️ Esri Clarity 2024": esriClarity,
+    "🛰️ Esri هجين": esriSatelliteLabels,
+    "🛰️ Esri قمر صناعي": esriSatellite,
+    "🛰️ Yandex": yandexSatellite,
+    "── خرائط شوارع ──": osmStandard,
+    "🗺️ Esri شوارع": esriStreet,
+    "🗺️ CartoDB": cartoVoyager,
+    "📴 أوفلاين صنعاء": offlineLocal,
+};
+
+L.control.layers(baseMaps, null, { position: 'topright' }).addTo(map);
+
+// Create marker icons for different types
+function createIcon(color, darkColor) {
+    return L.divIcon({
+        className: 'custom-div-icon',
+        html: `<div class="marker-pin" style="background: linear-gradient(135deg, ${color}, ${darkColor});"></div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 36],
+        popupAnchor: [0, -36],
+    });
+}
+
+const supplierIcon = createIcon('#ef4444', '#dc2626');  // أحمر - الموردين
+const competitorIcon = createIcon('#f97316', '#ea580c'); // برتقالي - المنافسين
+const warehouseIcon = createIcon('#3b82f6', '#2563eb'); // أزرق - المخازن  
+const storeIcon = createIcon('#22c55e', '#16a34a');     // أخضر - الفروع
+const employeeIcon = createIcon('#a855f7', '#9333ea');  // بنفسجي - الموظفين
+
+// Popup templates
+function createPopup(type, icon, name, details, lat, lng) {
+    let body = '';
+    details.forEach(d => {
+        if (d.value) body += `<p><span>${d.icon}</span> ${d.value}</p>`;
+    });
+    return `
+        <div class="map-popup">
+            <div class="map-popup-header ${type}">
+                <h3><span class="icon">${icon}</span> ${name}</h3>
+            </div>
+            ${body ? `<div class="map-popup-body">${body}</div>` : ''}
+            <div class="map-popup-footer">
+                <a href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 18l6-6-6-6"/>
+                    </svg>
+                    الاتجاهات
+                </a>
+            </div>
+        </div>
+    `;
+}
+
+// Layer groups for each type
+const suppliersLayer = L.layerGroup().addTo(map);
+const competitorsLayer = L.layerGroup().addTo(map);
+const warehousesLayer = L.layerGroup().addTo(map);
+const storesLayer = L.layerGroup().addTo(map);
+const employeesLayer = L.layerGroup().addTo(map);
+
+// All markers for zoom
+const allMarkers = [];
+
+// Suppliers data
+const suppliersData = [
+    {% for s in suppliers %}
+    {% if s.latitude and s.longitude %}
+    { id: {{ s.id }}, name: "{{ s.name }}", phone: "{{ s.phone or '' }}", address: "{{ s.address or '' }}", lat: {{ s.latitude }}, lng: {{ s.longitude }} },
+    {% endif %}
+    {% endfor %}
+];
+
+// Competitors data
+const competitorsData = [
+    {% for c in competitors %}
+    {% if c.latitude and c.longitude %}
+    { id: {{ c.id }}, name: "{{ c.name }}", type: "{{ c.type or '' }}", address: "{{ c.address or '' }}", lat: {{ c.latitude }}, lng: {{ c.longitude }} },
+    {% endif %}
+    {% endfor %}
+];
+
+// Warehouses data
+const warehousesData = [
+    {% for w in warehouses %}
+    {% if w.latitude and w.longitude %}
+    { id: {{ w.id }}, name: "{{ w.name }}", address: "{{ w.address or '' }}", lat: {{ w.latitude }}, lng: {{ w.longitude }} },
+    {% endif %}
+    {% endfor %}
+];
+
+// Stores data
+const storesData = [
+    {% for st in stores %}
+    {% if st.latitude and st.longitude %}
+    { id: {{ st.id }}, name: "{{ st.name }}", address: "{{ st.address or '' }}", lat: {{ st.latitude }}, lng: {{ st.longitude }} },
+    {% endif %}
+    {% endfor %}
+];
+
+// Add supplier markers
+suppliersData.forEach(s => {
+    const popup = createPopup('supplier', '🏢', s.name, [
+        { icon: '📞', value: s.phone },
+        { icon: '📍', value: s.address }
+    ], s.lat, s.lng);
+    const marker = L.marker([s.lat, s.lng], { icon: supplierIcon }).bindPopup(popup);
+    suppliersLayer.addLayer(marker);
+    allMarkers.push(marker);
+});
+
+// Add competitor markers
+competitorsData.forEach(c => {
+    const popup = createPopup('competitor', '⚔️', c.name, [
+        { icon: '🏷️', value: c.type },
+        { icon: '📍', value: c.address }
+    ], c.lat, c.lng);
+    const marker = L.marker([c.lat, c.lng], { icon: competitorIcon }).bindPopup(popup);
+    competitorsLayer.addLayer(marker);
+    allMarkers.push(marker);
+});
+
+// Add warehouse markers
+warehousesData.forEach(w => {
+    const popup = createPopup('warehouse', '🏭', w.name, [
+        { icon: '📍', value: w.address }
+    ], w.lat, w.lng);
+    const marker = L.marker([w.lat, w.lng], { icon: warehouseIcon }).bindPopup(popup);
+    warehousesLayer.addLayer(marker);
+    allMarkers.push(marker);
+});
+
+// Add store markers
+storesData.forEach(st => {
+    const popup = createPopup('store', '🏪', st.name, [
+        { icon: '📍', value: st.address }
+    ], st.lat, st.lng);
+    const marker = L.marker([st.lat, st.lng], { icon: storeIcon }).bindPopup(popup);
+    storesLayer.addLayer(marker);
+    allMarkers.push(marker);
+});
+
+// Employees data
+const employeesData = [
+    {% for e in employees %}
+    {% if e.latitude and e.longitude %}
+    { id: {{ e.id }}, name: "{{ e.name }}", job_title: "{{ e.job_title or '' }}", phone: "{{ e.phone or '' }}", address: "{{ e.address or '' }}", lat: {{ e.latitude }}, lng: {{ e.longitude }} },
+    {% endif %}
+    {% endfor %}
+];
+
+// Add employee markers
+employeesData.forEach(e => {
+    const popup = createPopup('employee', '👤', e.name, [
+        { icon: '💼', value: e.job_title },
+        { icon: '📞', value: e.phone },
+        { icon: '🏠', value: e.address }
+    ], e.lat, e.lng);
+    const marker = L.marker([e.lat, e.lng], { icon: employeeIcon }).bindPopup(popup);
+    employeesLayer.addLayer(marker);
+    allMarkers.push(marker);
+});
+
+// Update counts
+document.getElementById('suppliersCount').textContent = suppliersData.length;
+document.getElementById('competitorsCount').textContent = competitorsData.length;
+document.getElementById('warehousesCount').textContent = warehousesData.length;
+document.getElementById('storesCount').textContent = storesData.length;
+document.getElementById('employeesCount').textContent = employeesData.length;
+
+// Toggle layer visibility
+function toggleLayer(type) {
+    if (type === 'suppliers') {
+        if (document.getElementById('showSuppliers').checked) {
+            map.addLayer(suppliersLayer);
+        } else {
+            map.removeLayer(suppliersLayer);
+        }
+    } else if (type === 'competitors') {
+        if (document.getElementById('showCompetitors').checked) {
+            map.addLayer(competitorsLayer);
+        } else {
+            map.removeLayer(competitorsLayer);
+        }
+    } else if (type === 'warehouses') {
+        if (document.getElementById('showWarehouses').checked) {
+            map.addLayer(warehousesLayer);
+        } else {
+            map.removeLayer(warehousesLayer);
+        }
+    } else if (type === 'stores') {
+        if (document.getElementById('showStores').checked) {
+            map.addLayer(storesLayer);
+        } else {
+            map.removeLayer(storesLayer);
+        }
+    } else if (type === 'employees') {
+        if (document.getElementById('showEmployees').checked) {
+            map.addLayer(employeesLayer);
+        } else {
+            map.removeLayer(employeesLayer);
+        }
+    }
+}
+
+// Zoom functions
+function zoomToAll() {
+    if (allMarkers.length > 0) {
+        const group = L.featureGroup(allMarkers);
+        map.fitBounds(group.getBounds().pad(0.1));
+    }
+}
+
+function zoomToSanaa() {
+    map.setView([SANAA_LAT, SANAA_LNG], 13);
+}
+
+// GPS - تحديد موقعي الحالي
+let myLocationMarker = null;
+let myLocationCircle = null;
+
+function locateMe() {
+    if (!navigator.geolocation) {
+        alert('المتصفح لا يدعم تحديد الموقع');
+        return;
+    }
+    
+    // إظهار رسالة تحميل
+    document.getElementById('mapMode').innerHTML = '🔄 جاري تحديد موقعك...';
+    
+    navigator.geolocation.getCurrentPosition(
+        function(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+            
+            // إزالة العلامة السابقة
+            if (myLocationMarker) map.removeLayer(myLocationMarker);
+            if (myLocationCircle) map.removeLayer(myLocationCircle);
+            
+            // إضافة دائرة الدقة
+            myLocationCircle = L.circle([lat, lng], {
+                radius: accuracy,
+                color: '#ef4444',
+                fillColor: '#ef4444',
+                fillOpacity: 0.15,
+                weight: 2
+            }).addTo(map);
+            
+            // إضافة علامة الموقع
+            const myIcon = L.divIcon({
+                className: 'my-location-marker',
+                html: `<div style="
+                    width: 20px; height: 20px;
+                    background: #ef4444;
+                    border: 4px solid white;
+                    border-radius: 50%;
+                    box-shadow: 0 0 0 3px #ef4444, 0 4px 15px rgba(239,68,68,0.5);
+                    animation: pulse 2s infinite;
+                "></div>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+            
+            myLocationMarker = L.marker([lat, lng], { icon: myIcon })
+                .addTo(map)
+                .bindPopup(`
+                    <div class="map-popup">
+                        <div class="map-popup-header" style="background: linear-gradient(135deg, #ef4444, #dc2626);">
+                            <h3>📍 موقعك الحالي</h3>
+                        </div>
+                        <div class="map-popup-body">
+                            <p>📐 الدقة: ${Math.round(accuracy)} متر</p>
+                            <p>🌍 ${lat.toFixed(6)}, ${lng.toFixed(6)}</p>
+                        </div>
+                    </div>
+                `)
+                .openPopup();
+            
+            // تكبير على الموقع
+            map.setView([lat, lng], 17);
+            document.getElementById('mapMode').innerHTML = '📍 تم تحديد موقعك';
+            
+            setTimeout(() => {
+                document.getElementById('mapMode').innerHTML = '🛰️ قمر صناعي HD';
+            }, 3000);
+        },
+        function(error) {
+            let msg = 'حدث خطأ في تحديد الموقع';
+            if (error.code === 1) msg = 'يرجى السماح بالوصول للموقع';
+            else if (error.code === 2) msg = 'الموقع غير متاح';
+            else if (error.code === 3) msg = 'انتهت مهلة تحديد الموقع';
+            
+            alert(msg);
+            document.getElementById('mapMode').innerHTML = '🛰️ قمر صناعي HD';
+        },
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        }
+    );
+}
+
+// Scale control
+L.control.scale({ metric: true, imperial: false }).addTo(map);
+
+// ============ نظام إضافة المواقع الموحد ============
+let locationMarker = null;
+let locationMap = null;
+let currentLocationType = null;
+
+const locationConfig = {
+    supplier: { 
+        title: 'مورد جديد', 
+        icon: '🏢', 
+        color: 'red',
+        api: '/api/suppliers',
+        fields: ['name', 'phone', 'address']
+    },
+    competitor: { 
+        title: 'منافس جديد', 
+        icon: '⚔️', 
+        color: 'orange',
+        api: '/api/competitors',
+        fields: ['name', 'type', 'phone', 'address', 'notes']
+    },
+    warehouse: { 
+        title: 'مخزن جديد', 
+        icon: '🏭', 
+        color: 'blue',
+        api: '/api/warehouses',
+        fields: ['name', 'address']
+    },
+    store: { 
+        title: 'فرع جديد', 
+        icon: '🏪', 
+        color: 'green',
+        api: '/api/stores',
+        fields: ['name', 'address', 'phone']
+    },
+    employee: { 
+        title: 'موظف جديد', 
+        icon: '👤', 
+        color: 'purple',
+        api: '/api/employees',
+        fields: ['name', 'job_title', 'phone', 'address']
+    }
+};
+
+function openAddModal(type) {
+    currentLocationType = type;
+    const config = locationConfig[type];
+    
+    // تحديث عنوان النافذة
+    document.getElementById('modalTitle').innerHTML = `<span class="w-10 h-10 bg-${config.color}-100 rounded-xl flex items-center justify-center">${config.icon}</span> ${config.title}`;
+    document.getElementById('saveLocationBtn').className = `px-5 py-2.5 text-white bg-gradient-to-r from-${config.color}-500 to-${config.color}-600 rounded-xl hover:from-${config.color}-600 hover:to-${config.color}-700 transition-all`;
+    
+    // إظهار/إخفاء الحقول حسب النوع
+    document.getElementById('typeField').style.display = type === 'competitor' ? 'block' : 'none';
+    document.getElementById('notesField').style.display = type === 'competitor' ? 'block' : 'none';
+    document.getElementById('jobTitleField').style.display = type === 'employee' ? 'block' : 'none';
+    
+    // إظهار النافذة
+    document.getElementById('locationModal').classList.remove('hidden');
+    document.getElementById('locationModal').classList.add('flex');
+    document.getElementById('addDropdownMenu').classList.add('hidden');
+    
+    setTimeout(() => {
+        if (!locationMap) {
+            locationMap = L.map('locationMapPicker').setView([SANAA_LAT, SANAA_LNG], 13);
+            L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                attribution: '© Google'
+            }).addTo(locationMap);
+            
+            locationMap.on('click', function(e) {
+                setLocationMarker(e.latlng.lat, e.latlng.lng);
+            });
+        } else {
+            locationMap.invalidateSize();
+        }
+    }, 100);
+}
+
+function closeLocationModal() {
+    document.getElementById('locationModal').classList.add('hidden');
+    document.getElementById('locationModal').classList.remove('flex');
+    document.getElementById('locationForm').reset();
+    if (locationMarker) {
+        locationMap.removeLayer(locationMarker);
+        locationMarker = null;
+    }
+}
+
+function setLocationMarker(lat, lng) {
+    const config = locationConfig[currentLocationType];
+    const icons = { supplier: supplierIcon, competitor: competitorIcon, warehouse: warehouseIcon, store: storeIcon };
+    
+    if (locationMarker) {
+        locationMarker.setLatLng([lat, lng]);
+    } else {
+        locationMarker = L.marker([lat, lng], { icon: icons[currentLocationType] }).addTo(locationMap);
+    }
+    document.getElementById('locationLat').value = lat.toFixed(6);
+    document.getElementById('locationLng').value = lng.toFixed(6);
+}
+
+function getMyLocation() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+            locationMap.setView([position.coords.latitude, position.coords.longitude], 17);
+            setLocationMarker(position.coords.latitude, position.coords.longitude);
+        });
+    }
+}
+
+async function saveLocation() {
+    const form = document.getElementById('locationForm');
+    const config = locationConfig[currentLocationType];
+    
+    const data = {
+        name: form.locationName.value,
+        phone: form.locationPhone.value || null,
+        address: form.locationAddress.value || null,
+        latitude: parseFloat(form.locationLat.value) || null,
+        longitude: parseFloat(form.locationLng.value) || null,
+    };
+    
+    if (currentLocationType === 'competitor') {
+        data.type = form.locationType.value;
+        data.notes = form.locationNotes.value;
+    }
+    
+    if (currentLocationType === 'employee') {
+        data.job_title = form.locationJobTitle.value;
+    }
+    
+    if (!data.name) {
+        alert('يرجى إدخال الاسم');
+        return;
+    }
+    
+    try {
+        const response = await fetch(config.api, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        if (result.success) {
+            closeLocationModal();
+            location.reload();
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الاتصال');
+    }
+}
+</script>
+
+<!-- نافذة إضافة موقع موحدة -->
+<div id="locationModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100">
+            <div class="flex items-center justify-between">
+                <h3 id="modalTitle" class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    إضافة موقع جديد
+                </h3>
+                <button onclick="closeLocationModal()" class="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <form id="locationForm" class="p-6 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">الاسم *</label>
+                    <input type="text" name="locationName" required
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                           placeholder="أدخل الاسم">
+                </div>
+                <div id="typeField">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">النوع</label>
+                    <select name="locationType" 
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                        <option value="سوبرماركت">سوبرماركت</option>
+                        <option value="بقالة">بقالة</option>
+                        <option value="هايبرماركت">هايبرماركت</option>
+                        <option value="متجر جملة">متجر جملة</option>
+                        <option value="آخر">آخر</option>
+                    </select>
+                </div>
+                <div id="jobTitleField" style="display:none;">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">المسمى الوظيفي</label>
+                    <input type="text" name="locationJobTitle"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                           placeholder="مثال: مندوب مبيعات">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف</label>
+                    <input type="tel" name="locationPhone"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                           placeholder="777123456">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">العنوان</label>
+                    <input type="text" name="locationAddress"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                           placeholder="الشارع، المنطقة">
+                </div>
+            </div>
+            
+            <div id="notesField">
+                <label class="block text-sm font-medium text-gray-700 mb-1">ملاحظات</label>
+                <textarea name="locationNotes" rows="2"
+                          class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          placeholder="ملاحظات إضافية..."></textarea>
+            </div>
+            
+            <!-- Map Picker -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-sm font-medium text-gray-700">📍 حدد الموقع بالنقر على الخريطة</label>
+                    <button type="button" onclick="getMyLocation()" 
+                            class="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1 font-medium">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                        </svg>
+                        📍 موقعي الحالي
+                    </button>
+                </div>
+                <div id="locationMapPicker" class="h-56 rounded-xl border border-gray-300 z-0"></div>
+                <div class="grid grid-cols-2 gap-2 mt-2">
+                    <input type="text" id="locationLat" name="locationLat" readonly
+                           class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-center"
+                           placeholder="خط العرض">
+                    <input type="text" id="locationLng" name="locationLng" readonly
+                           class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-center"
+                           placeholder="خط الطول">
+                </div>
+            </div>
+        </form>
+        
+        <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
+            <button type="button" onclick="closeLocationModal()" 
+                    class="px-5 py-2.5 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+                إلغاء
+            </button>
+            <button type="button" id="saveLocationBtn" onclick="saveLocation()" 
+                    class="px-5 py-2.5 text-white bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition-all">
+                💾 حفظ
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}

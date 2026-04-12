@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}نظام إدارة السوبرماركت{% endblock %}</title>
     
     <!-- Tailwind CSS -->
@@ -49,6 +50,32 @@
             document.documentElement.classList.add('dark');
         }
     </script>
+    <script>
+        (function () {
+            const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+            const csrfToken = tokenMeta ? tokenMeta.getAttribute('content') : '';
+
+            if (!csrfToken || typeof window.fetch !== 'function') {
+                return;
+            }
+
+            const originalFetch = window.fetch.bind(window);
+            window.fetch = function (input, init) {
+                const options = init ? { ...init } : {};
+                const method = (options.method || 'GET').toUpperCase();
+
+                if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+                    const headers = new Headers(options.headers || {});
+                    if (!headers.has('X-CSRF-Token')) {
+                        headers.set('X-CSRF-Token', csrfToken);
+                    }
+                    options.headers = headers;
+                }
+
+                return originalFetch(input, options);
+            };
+        })();
+    </script>
     
     <style>
         * { font-family: 'Tajawal', sans-serif; }
@@ -90,9 +117,9 @@
       }">
     
     <!-- Mobile Menu Button -->
-    <div class="lg:hidden fixed top-4 right-4 z-50">
+    <div class="lg:hidden top-4 right-4 z-50 fixed">
         <button @click="mobileMenu = !mobileMenu" 
-                class="p-2 rounded-lg bg-white dark:bg-gray-800 shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                class="bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 shadow-lg p-2 rounded-lg text-gray-700 dark:text-gray-200">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
@@ -106,21 +133,20 @@
                'sidebar-expanded': sidebarOpen,
                'sidebar-collapsed': !sidebarOpen
            }"
-           class="fixed inset-y-0 right-0 z-40 bg-gradient-to-b from-primary-800 to-primary-900 dark:from-gray-800 dark:to-gray-900
-                  transform transition-all duration-300 ease-in-out lg:translate-x-0 shadow-2xl overflow-hidden">
+           class="right-0 z-40 fixed inset-y-0 bg-gradient-to-b from-primary-800 dark:from-gray-800 to-primary-900 dark:to-gray-900 shadow-2xl overflow-hidden transition-all lg:translate-x-0 duration-300 ease-in-out transform">
         
         <!-- Logo + Collapse Button -->
-        <div class="p-4 border-b border-primary-700/50 dark:border-gray-700/50 flex items-center justify-between">
+        <div class="flex justify-between items-center p-4 border-primary-700/50 dark:border-gray-700/50 border-b">
             <div class="flex items-center gap-3">
-                <div class="logo-icon w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                <div class="flex flex-shrink-0 justify-center items-center bg-white/10 rounded-xl w-10 h-10 logo-icon">
                     <span class="text-xl">🏪</span>
                 </div>
                 <div class="logo-text">
-                    <h1 class="text-white font-bold text-lg leading-tight">سوبرماركت</h1>
+                    <h1 class="font-bold text-white text-lg leading-tight">سوبرماركت</h1>
                     <p class="text-primary-300 dark:text-gray-400 text-xs">نظام إدارة المشتريات</p>
                 </div>
             </div>
-            <button @click="toggleSidebar()" class="hidden lg:flex p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+            <button @click="toggleSidebar()" class="hidden lg:flex hover:bg-white/10 p-1.5 rounded-lg text-white/60 hover:text-white transition-colors">
                 <svg class="w-5 h-5 transition-transform duration-300" :class="{'rotate-180': !sidebarOpen}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
                 </svg>
@@ -129,13 +155,13 @@
         
         <!-- User Info -->
         {% if session.user_id %}
-        <div class="p-3 mx-3 mt-3 bg-white/10 dark:bg-white/5 rounded-xl">
+        <div class="bg-white/10 dark:bg-white/5 mx-3 mt-3 p-3 rounded-xl">
             <div class="flex items-center gap-3">
-                <div class="w-9 h-9 bg-accent rounded-full flex items-center justify-center flex-shrink-0">
-                    <span class="text-white font-bold text-sm">{{ session.full_name[0] if session.full_name else 'م' }}</span>
+                <div class="flex flex-shrink-0 justify-center items-center bg-accent rounded-full w-9 h-9">
+                    <span class="font-bold text-white text-sm">{{ session.full_name[0] if session.full_name else 'م' }}</span>
                 </div>
-                <div class="user-details min-w-0">
-                    <p class="text-white font-medium text-sm truncate">{{ session.full_name }}</p>
+                <div class="min-w-0 user-details">
+                    <p class="font-medium text-white text-sm truncate">{{ session.full_name }}</p>
                     <p class="text-primary-300 dark:text-gray-400 text-xs">
                         {% if session.role == 'manager' %}مدير{% elif session.role == 'agent' %}مندوب{% else %}أمين مخزن{% endif %}
                     </p>
@@ -145,175 +171,260 @@
         {% endif %}
         
         <!-- Navigation -->
-        <nav class="p-3 space-y-0.5 overflow-y-auto" style="height: calc(100vh - 200px);">
+        <nav class="space-y-0.5 p-3 overflow-y-auto" style="height: calc(100vh - 200px);">
             
+            <!-- الرئيسية -->
             <a href="{{ url_for('dashboard') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint == 'dashboard' %}bg-white/15 text-white{% endif %}"
                title="الرئيسية">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
                 </svg>
                 <span class="nav-text">الرئيسية</span>
             </a>
             
-            <div class="nav-section pt-3 pb-1">
-                <p class="px-3 text-xs font-medium text-primary-400 dark:text-gray-500 uppercase">الإعدادات الأساسية</p>
+            <!-- نقاط البيع -->
+            <a href="{{ url_for('pos') }}" 
+               class="flex items-center gap-3 px-3 py-3 rounded-xl text-white font-bold transition-all
+                      bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 shadow-lg
+                      {% if request.endpoint in ['pos','pos_login','pos_returns','pos_shift','pos_reports'] %}ring-2 ring-white{% endif %}"
+               title="نقاط البيع">
+                <svg class="flex-shrink-0 w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                </svg>
+                <span class="nav-text text-lg">نقاط البيع</span>
+                <span class="nav-text bg-white/20 px-2 py-0.5 rounded text-xs">POS</span>
+            </a>
+
+            <!-- ═══ الأصناف والمخزون ═══ -->
+            {% if session.role in ['manager','warehouse'] %}
+            <div class="pt-3 pb-1 nav-section">
+                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">📦 الأصناف والمخزون</p>
             </div>
-            
-            <a href="{{ url_for('suppliers') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'suppliers' %}bg-white/15 text-white{% endif %}"
-               title="الموردين">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                </svg>
-                <span class="nav-text">الموردين</span>
-            </a>
-            
-            <a href="{{ url_for('categories') }}"
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'categories' %}bg-white/15 text-white{% endif %}"
-               title="الأقسام">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-                </svg>
-                <span class="nav-text">الأقسام</span>
-            </a>
-            
+
             <a href="{{ url_for('products') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint == 'products' %}bg-white/15 text-white{% endif %}"
                title="الأصناف">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                 </svg>
                 <span class="nav-text">الأصناف</span>
             </a>
-            
+
+            <a href="{{ url_for('categories') }}"
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
+                      {% if request.endpoint == 'categories' %}bg-white/15 text-white{% endif %}"
+               title="الأقسام">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                </svg>
+                <span class="nav-text">الأقسام</span>
+            </a>
+
+            <a href="{{ url_for('units') }}" 
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
+                      {% if request.endpoint == 'units' %}bg-white/15 text-white{% endif %}"
+               title="الوحدات">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/>
+                </svg>
+                <span class="nav-text">الوحدات</span>
+            </a>
+
+            <a href="{{ url_for('batches') }}" 
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
+                      {% if request.endpoint == 'batches' %}bg-white/15 text-white{% endif %}"
+               title="الدفعات والصلاحية">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <span class="nav-text">الدفعات والصلاحية</span>
+            </a>
+
+            <a href="{{ url_for('inventory') }}" 
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
+                      {% if request.endpoint == 'inventory' %}bg-white/15 text-white{% endif %}"
+               title="حركات المخزون">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+                </svg>
+                <span class="nav-text">حركات المخزون</span>
+            </a>
+
+            <a href="{{ url_for('barcode_scanner') }}" 
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
+                      {% if request.endpoint == 'barcode_scanner' %}bg-white/15 text-white{% endif %}"
+               title="ماسح الباركود">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h2M4 12h2m14 0h2M6 20h2m-4-4h2m0-8h2m8 8h2M4 8h2"/>
+                </svg>
+                <span class="nav-text">ماسح الباركود</span>
+            </a>
+            {% endif %}
+
+            <!-- ═══ الموردين ═══ -->
+            {% if session.role == 'manager' %}
+            <div class="pt-3 pb-1 nav-section">
+                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">🏢 الموردين</p>
+            </div>
+
+            <a href="{{ url_for('suppliers') }}" 
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
+                      {% if request.endpoint == 'suppliers' %}bg-white/15 text-white{% endif %}"
+               title="الموردين">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                </svg>
+                <span class="nav-text">الموردين</span>
+            </a>
+
             <a href="{{ url_for('supplier_products') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint == 'supplier_products' %}bg-white/15 text-white{% endif %}"
-               title="ربط الأسماء">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               title="أصناف الموردين">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
                 </svg>
-                <span class="nav-text">ربط الأسماء</span>
+                <span class="nav-text">أصناف الموردين</span>
             </a>
-            
-            <div class="nav-section pt-3 pb-1">
-                <p class="px-3 text-xs font-medium text-primary-400 dark:text-gray-500 uppercase">الأسعار</p>
-            </div>
-            
+
             <a href="{{ url_for('supplier_prices') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint == 'supplier_prices' %}bg-white/15 text-white{% endif %}"
                title="أسعار الموردين">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
                 <span class="nav-text">أسعار الموردين</span>
             </a>
-            
-            <a href="{{ url_for('competitor_prices') }}" 
+
+            <a href="{{ url_for('maps') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'competitor_prices' %}bg-white/15 text-white{% endif %}"
-               title="أسعار المنافسين">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                      {% if request.endpoint == 'maps' %}bg-white/15 text-white{% endif %}"
+               title="خريطة الموردين">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
                 </svg>
-                <span class="nav-text">أسعار المنافسين</span>
+                <span class="nav-text">خريطة الموردين</span>
             </a>
-            
-            <a href="{{ url_for('pricing') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'pricing' %}bg-white/15 text-white{% endif %}"
-               title="تسعيرات البيع">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
-                </svg>
-                <span class="nav-text">تسعيرات البيع</span>
-            </a>
-            
-            <div class="nav-section pt-3 pb-1">
-                <p class="px-3 text-xs font-medium text-primary-400 dark:text-gray-500 uppercase">المشتريات</p>
+            {% endif %}
+
+            <!-- ═══ المشتريات ═══ -->
+            {% if session.role in ['manager', 'agent'] %}
+            <div class="pt-3 pb-1 nav-section">
+                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">🛒 المشتريات</p>
             </div>
-            
+
             <a href="{{ url_for('supplier_invoices') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint in ['supplier_invoices', 'new_supplier_invoice', 'view_supplier_invoice'] %}bg-white/15 text-white{% endif %}"
-               title="فواتير المورد">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               title="فواتير الشراء">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                 </svg>
-                <span class="nav-text">فواتير المورد</span>
+                <span class="nav-text">فواتير الشراء</span>
             </a>
-            
+
             <a href="{{ url_for('agent_invoices') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint in ['agent_invoices', 'sort_invoice'] %}bg-white/15 text-white{% endif %}"
-               title="فاتورة المندوب">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               title="فرز المندوب">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
                 </svg>
-                <span class="nav-text">فاتورة المندوب</span>
+                <span class="nav-text">فرز المندوب</span>
             </a>
-            
-            <div class="nav-section pt-3 pb-1">
-                <p class="px-3 text-xs font-medium text-primary-400 dark:text-gray-500 uppercase">المخزون</p>
-            </div>
-            
+
             <a href="{{ url_for('warehouse') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint == 'warehouse' %}bg-white/15 text-white{% endif %}"
                title="استلام المخزن">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
                 </svg>
                 <span class="nav-text">استلام المخزن</span>
             </a>
-            
-            <a href="{{ url_for('inventory') }}" 
+            {% endif %}
+
+            <!-- ═══ الأسعار والتقارير ═══ -->
+            {% if session.role == 'manager' %}
+            <div class="pt-3 pb-1 nav-section">
+                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">💰 الأسعار</p>
+            </div>
+
+            <a href="{{ url_for('pricing') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'inventory' %}bg-white/15 text-white{% endif %}"
-               title="المخزون">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+                      {% if request.endpoint == 'pricing' %}bg-white/15 text-white{% endif %}"
+               title="تسعيرات البيع">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
                 </svg>
-                <span class="nav-text">المخزون</span>
+                <span class="nav-text">تسعيرات البيع</span>
             </a>
-            
+
+            <a href="{{ url_for('competitor_prices') }}" 
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
+                      {% if request.endpoint == 'competitor_prices' %}bg-white/15 text-white{% endif %}"
+               title="أسعار المنافسين">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+                <span class="nav-text">أسعار المنافسين</span>
+            </a>
+
+            <div class="pt-3 pb-1 nav-section">
+                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">📊 التقارير والإدارة</p>
+            </div>
+
             <a href="{{ url_for('reports') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint == 'reports' %}bg-white/15 text-white{% endif %}"
                title="التقارير">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                 </svg>
                 <span class="nav-text">التقارير</span>
             </a>
-            
-            {% if session.role == 'manager' %}
-            <div class="nav-section pt-3 pb-1">
-                <p class="px-3 text-xs font-medium text-primary-400 dark:text-gray-500 uppercase">الإدارة</p>
-            </div>
-            
+
             <a href="{{ url_for('users') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint == 'users' %}bg-white/15 text-white{% endif %}"
                title="المستخدمين">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
                 </svg>
                 <span class="nav-text">المستخدمين</span>
             </a>
+
+            <a href="{{ url_for('employees') }}" 
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
+                      {% if request.endpoint == 'employees' %}bg-white/15 text-white{% endif %}"
+               title="الموظفين">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                <span class="nav-text">الموظفين</span>
+            </a>
+
+            <a href="{{ url_for('settings') }}" 
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
+                      {% if request.endpoint == 'settings' %}bg-white/15 text-white{% endif %}"
+               title="الإعدادات">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                <span class="nav-text">الإعدادات</span>
+            </a>
             {% endif %}
-            
+
             <a href="{{ url_for('change_password') }}" 
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
                       {% if request.endpoint == 'change_password' %}bg-white/15 text-white{% endif %}"
                title="تغيير كلمة المرور">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
                 </svg>
                 <span class="nav-text">تغيير كلمة المرور</span>
@@ -322,12 +433,12 @@
         </nav>
         
         <!-- Bottom Actions: Dark Mode + Logout -->
-        <div class="absolute bottom-0 left-0 right-0 p-3 border-t border-primary-700/50 dark:border-gray-700/50 space-y-1">
+        <div class="right-0 bottom-0 left-0 absolute space-y-1 p-3 border-primary-700/50 dark:border-gray-700/50 border-t">
             <!-- Logout -->
             <a href="{{ url_for('logout') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-all"
+               class="flex items-center gap-3 hover:bg-red-500/20 px-3 py-2.5 rounded-xl text-red-300 hover:text-red-200 transition-all"
                title="تسجيل الخروج">
-                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
                 </svg>
                 <span class="nav-text">تسجيل الخروج</span>
@@ -344,19 +455,94 @@
          x-transition:leave="transition-opacity ease-in duration-200"
          x-transition:leave-start="opacity-100"
          x-transition:leave-end="opacity-0"
-         class="fixed inset-0 bg-black/50 z-30 lg:hidden"></div>
+         class="lg:hidden z-30 fixed inset-0 bg-black/50"></div>
     
     <!-- Main Content -->
     <main :class="sidebarOpen ? 'lg:mr-72' : 'lg:mr-20'" class="min-h-screen transition-all duration-300">
         <!-- Header -->
-        <header class="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-20 transition-colors">
-            <div class="px-6 py-4 flex items-center justify-between">
+        <header class="top-0 z-20 sticky bg-white dark:bg-gray-800 shadow-sm transition-colors">
+            <div class="flex justify-between items-center px-6 py-4">
                 <div>
-                    <h1 class="text-xl font-bold text-gray-800 dark:text-gray-100">{% block page_title %}{% endblock %}</h1>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">{% block page_subtitle %}{% endblock %}</p>
+                    <h1 class="font-bold text-gray-800 dark:text-gray-100 text-xl">{% block page_title %}{% endblock %}</h1>
+                    <p class="text-gray-500 dark:text-gray-400 text-sm">{% block page_subtitle %}{% endblock %}</p>
                 </div>
                 <div class="flex items-center gap-4">
                     {% block header_actions %}{% endblock %}
+                    
+                    <!-- Notifications Bell -->
+                    <div x-data="{ 
+                        open: false, 
+                        notifications: [], 
+                        unreadCount: 0,
+                        async loadNotifications() {
+                            try {
+                                const res = await fetch('/api/notifications');
+                                this.notifications = await res.json();
+                                const countRes = await fetch('/api/notifications/unread-count');
+                                const data = await countRes.json();
+                                this.unreadCount = data.count;
+                            } catch(e) {}
+                        },
+                        async markAllRead() {
+                            await fetch('/api/notifications/read-all', {method: 'POST'});
+                            this.unreadCount = 0;
+                            this.notifications.forEach(n => n.is_read = 1);
+                        }
+                    }" 
+                    x-init="loadNotifications(); setInterval(() => loadNotifications(), 30000)"
+                    class="relative">
+                        <button @click="open = !open" class="relative p-2 rounded-xl bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                            </svg>
+                            <span x-show="unreadCount > 0" 
+                                  x-text="unreadCount > 9 ? '9+' : unreadCount"
+                                  class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold"></span>
+                        </button>
+                        
+                        <!-- Dropdown -->
+                        <div x-show="open" @click.away="open = false" x-transition
+                             class="absolute left-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 z-50 overflow-hidden">
+                            <div class="flex justify-between items-center px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+                                <h3 class="font-bold text-gray-800 dark:text-white">الإشعارات</h3>
+                                <button @click="markAllRead()" class="text-sm text-primary-600 hover:text-primary-700">تحديد الكل كمقروء</button>
+                            </div>
+                            <div class="max-h-80 overflow-y-auto">
+                                <template x-if="notifications.length === 0">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <svg class="w-12 h-12 mx-auto text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                                        </svg>
+                                        <p>لا توجد إشعارات</p>
+                                    </div>
+                                </template>
+                                <template x-for="n in notifications" :key="n.id">
+                                    <a :href="n.link || '#'" 
+                                       class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 transition-colors"
+                                       :class="{'bg-primary-50 dark:bg-primary-900/20': !n.is_read}">
+                                        <div class="flex gap-3">
+                                            <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
+                                                 :class="{
+                                                    'bg-blue-100 text-blue-600': n.type === 'info',
+                                                    'bg-yellow-100 text-yellow-600': n.type === 'warning',
+                                                    'bg-red-100 text-red-600': n.type === 'error',
+                                                    'bg-green-100 text-green-600': n.type === 'success'
+                                                 }">
+                                                <template x-if="n.type === 'info'">🔔</template>
+                                                <template x-if="n.type === 'warning'">⚠️</template>
+                                                <template x-if="n.type === 'error'">❌</template>
+                                                <template x-if="n.type === 'success'">✅</template>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="font-medium text-gray-800 dark:text-white text-sm" x-text="n.title"></p>
+                                                <p class="text-gray-500 dark:text-gray-400 text-xs truncate" x-text="n.message"></p>
+                                            </div>
+                                        </div>
+                                    </a>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
                     
                     <!-- Dark/Light Toggle -->
                     <button @click="toggleDark()" 
@@ -381,7 +567,7 @@
         <!-- Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-        <div class="px-6 pt-4 space-y-2">
+        <div class="space-y-2 px-6 pt-4">
             {% for category, message in messages %}
             <div x-data="{ show: true }" 
                  x-show="show" 
@@ -410,6 +596,63 @@
     </main>
     
     <div id="modal-container"></div>
+
+    <!-- ═══ Toast Notifications ═══ -->
+    <div id="toast-container" class="fixed bottom-6 left-6 z-[9999] space-y-2 max-w-sm"></div>
+
+    <script>
+    function showToast(message, type = 'info', duration = 4000) {
+        const container = document.getElementById('toast-container');
+        const id = 'toast-' + Date.now();
+
+        const colors = {
+            success: 'bg-green-600 text-white',
+            error:   'bg-red-600 text-white',
+            warning: 'bg-yellow-500 text-white',
+            info:    'bg-blue-600 text-white',
+        };
+        const icons = {
+            success: '✓',
+            error:   '✕',
+            warning: '⚠',
+            info:    'ℹ',
+        };
+
+        const div = document.createElement('div');
+        div.id = id;
+        div.className = `flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-medium
+                         ${colors[type] || colors.info}
+                         transform transition-all duration-300 translate-y-4 opacity-0`;
+        div.innerHTML = `
+            <span class="text-lg leading-none">${icons[type] || icons.info}</span>
+            <span class="flex-1">${message}</span>
+            <button onclick="document.getElementById('${id}').remove()"
+                    class="opacity-70 hover:opacity-100 text-lg leading-none ml-1">✕</button>
+        `;
+        container.appendChild(div);
+
+        // Animate in
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                div.classList.remove('translate-y-4', 'opacity-0');
+                div.classList.add('translate-y-0', 'opacity-100');
+            });
+        });
+
+        // Auto remove
+        setTimeout(() => {
+            div.classList.add('opacity-0', 'translate-y-4');
+            setTimeout(() => div.remove(), 300);
+        }, duration);
+    }
+
+    // اختصارات
+    const showSuccess = (msg) => showToast(msg, 'success');
+    const showError   = (msg) => showToast(msg, 'error');
+    const showWarning = (msg) => showToast(msg, 'warning');
+    const showInfo    = (msg) => showToast(msg, 'info');
+    </script>
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

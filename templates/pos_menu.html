@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نقاط البيع - القائمة</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        .menu-card { transition: all 0.3s cubic-bezier(0.4,0,0.2,1); }
+        .menu-card:hover { transform: translateY(-6px) scale(1.02); }
+        .menu-card:active { transform: scale(0.97); }
+        .stat-card { backdrop-filter: blur(10px); }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        .fade-in { animation: fadeIn 0.5s ease forwards; }
+        .fade-in-delay-1 { animation-delay: 0.1s; opacity:0; }
+        .fade-in-delay-2 { animation-delay: 0.2s; opacity:0; }
+        .fade-in-delay-3 { animation-delay: 0.3s; opacity:0; }
+        .fade-in-delay-4 { animation-delay: 0.4s; opacity:0; }
+    </style>
+</head>
+<body class="bg-gray-900 min-h-screen" x-data="posMenu()" x-init="init()">
+
+    <!-- Header -->
+    <div class="bg-gradient-to-l from-blue-900 via-blue-700 to-indigo-800 text-white shadow-2xl">
+        <div class="px-6 py-5 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-3xl shadow-inner">🏪</div>
+                <div>
+                    <h1 class="text-2xl font-black">نقاط البيع</h1>
+                    <p class="text-blue-200 text-sm">مرحباً، <span class="font-bold text-white" x-text="cashierName"></span></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="text-left">
+                    <div class="text-2xl font-mono font-bold" x-text="currentTime"></div>
+                    <div class="text-blue-200 text-sm" x-text="currentDate"></div>
+                </div>
+                <a href="{{ url_for('pos_login') }}" class="p-3 bg-white/10 hover:bg-white/20 rounded-xl transition" title="تغيير المستخدم">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+
+        <!-- Today Stats Bar -->
+        <div class="px-6 pb-5 grid grid-cols-4 gap-3">
+            <div class="stat-card bg-white/10 rounded-2xl p-4 text-center fade-in fade-in-delay-1">
+                <div class="text-2xl font-black" x-text="stats.total_invoices || 0"></div>
+                <div class="text-blue-200 text-xs mt-1">فاتورة اليوم</div>
+            </div>
+            <div class="stat-card bg-white/10 rounded-2xl p-4 text-center fade-in fade-in-delay-2">
+                <div class="text-2xl font-black" x-text="(stats.total_sales || 0).toFixed(2)"></div>
+                <div class="text-blue-200 text-xs mt-1">إجمالي المبيعات</div>
+            </div>
+            <div class="stat-card bg-white/10 rounded-2xl p-4 text-center fade-in fade-in-delay-3">
+                <div class="text-2xl font-black" x-text="(stats.total_discount || 0).toFixed(2)"></div>
+                <div class="text-blue-200 text-xs mt-1">إجمالي الخصومات</div>
+            </div>
+            <div class="stat-card bg-white/10 rounded-2xl p-4 text-center fade-in fade-in-delay-4">
+                <div class="text-2xl font-black" x-text="stats.shift_status || 'مغلقة'"></div>
+                <div class="text-blue-200 text-xs mt-1">حالة الوردية</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Menu Grid -->
+    <div class="p-6">
+        <h2 class="text-gray-400 text-sm font-bold mb-4 uppercase tracking-widest">العمليات الرئيسية</h2>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+            
+            <!-- Sale -->
+            <a href="{{ url_for('pos') }}" class="menu-card bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 text-white shadow-xl shadow-green-900/40 flex flex-col items-center justify-center gap-3 min-h-[140px]">
+                <div class="text-5xl">🛒</div>
+                <div class="text-xl font-black">نقطة البيع</div>
+                <div class="text-green-200 text-xs">بيع وتسجيل فواتير</div>
+            </a>
+
+            <!-- Returns -->
+            <a href="{{ url_for('pos_returns') }}" class="menu-card bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl p-6 text-white shadow-xl shadow-orange-900/40 flex flex-col items-center justify-center gap-3 min-h-[140px]">
+                <div class="text-5xl">↩️</div>
+                <div class="text-xl font-black">المرتجعات</div>
+                <div class="text-orange-200 text-xs">إرجاع المبيعات</div>
+            </a>
+
+            <!-- Shift -->
+            <a href="{{ url_for('pos_shift') }}" class="menu-card bg-gradient-to-br from-purple-500 to-violet-600 rounded-2xl p-6 text-white shadow-xl shadow-purple-900/40 flex flex-col items-center justify-center gap-3 min-h-[140px]">
+                <div class="text-5xl">⏰</div>
+                <div class="text-xl font-black">الوردية</div>
+                <div class="text-purple-200 text-xs">فتح وإغلاق الوردية</div>
+            </a>
+
+            <!-- Reports -->
+            <a href="{{ url_for('pos_reports') }}" class="menu-card bg-gradient-to-br from-blue-500 to-cyan-600 rounded-2xl p-6 text-white shadow-xl shadow-blue-900/40 flex flex-col items-center justify-center gap-3 min-h-[140px]">
+                <div class="text-5xl">📊</div>
+                <div class="text-xl font-black">التقارير</div>
+                <div class="text-blue-200 text-xs">تقارير المبيعات والأداء</div>
+            </a>
+
+            <!-- Customers -->
+            <a href="{{ url_for('pos_customers') }}" class="menu-card bg-gradient-to-br from-teal-500 to-green-600 rounded-2xl p-6 text-white shadow-xl shadow-teal-900/40 flex flex-col items-center justify-center gap-3 min-h-[140px]">
+                <div class="text-5xl">👥</div>
+                <div class="text-xl font-black">العملاء</div>
+                <div class="text-teal-200 text-xs">إدارة بيانات العملاء</div>
+            </a>
+
+            <!-- Coupons -->
+            <a href="{{ url_for('pos_coupons') }}" class="menu-card bg-gradient-to-br from-pink-500 to-rose-600 rounded-2xl p-6 text-white shadow-xl shadow-pink-900/40 flex flex-col items-center justify-center gap-3 min-h-[140px]">
+                <div class="text-5xl">🎫</div>
+                <div class="text-xl font-black">الكوبونات</div>
+                <div class="text-pink-200 text-xs">كوبونات وبطاقات الخصم</div>
+            </a>
+        </div>
+
+        <h2 class="text-gray-400 text-sm font-bold mb-4 uppercase tracking-widest">المالية والمخزون</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+
+            <!-- Cash Drawer -->
+            <a href="{{ url_for('pos_cash') }}" class="menu-card bg-gradient-to-br from-yellow-500 to-amber-600 rounded-2xl p-5 text-white shadow-xl shadow-yellow-900/40 flex flex-col items-center justify-center gap-2 min-h-[110px]">
+                <div class="text-4xl">💵</div>
+                <div class="text-lg font-black">الصندوق</div>
+                <div class="text-yellow-200 text-xs">قبض وصرف نقدي</div>
+            </a>
+
+            <!-- Stock Count -->
+            <a href="{{ url_for('pos_stock_count') }}" class="menu-card bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl p-5 text-white shadow-xl shadow-indigo-900/40 flex flex-col items-center justify-center gap-2 min-h-[110px]">
+                <div class="text-4xl">📦</div>
+                <div class="text-lg font-black">جرد المخزون</div>
+                <div class="text-indigo-200 text-xs">فرق الكميات</div>
+            </a>
+
+            <!-- Price List -->
+            <a href="{{ url_for('pricing') }}" class="menu-card bg-gradient-to-br from-gray-600 to-gray-700 rounded-2xl p-5 text-white shadow-xl shadow-gray-900/40 flex flex-col items-center justify-center gap-2 min-h-[110px]">
+                <div class="text-4xl">🏷️</div>
+                <div class="text-lg font-black">الأسعار</div>
+                <div class="text-gray-300 text-xs">قوائم الأسعار</div>
+            </a>
+
+            <!-- Back to Main -->
+            <a href="{{ url_for('index') }}" class="menu-card bg-gradient-to-br from-slate-600 to-slate-700 rounded-2xl p-5 text-white shadow-xl shadow-slate-900/40 flex flex-col items-center justify-center gap-2 min-h-[110px]">
+                <div class="text-4xl">🏠</div>
+                <div class="text-lg font-black">النظام الرئيسي</div>
+                <div class="text-slate-300 text-xs">العودة للمدير</div>
+            </a>
+        </div>
+
+        <!-- Last Invoices -->
+        <div class="bg-gray-800 rounded-2xl p-5">
+            <h3 class="text-white font-bold mb-4 flex items-center gap-2">
+                <span>🧾</span> آخر الفواتير اليوم
+            </h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-gray-400 border-b border-gray-700">
+                            <th class="text-right py-2">رقم الفاتورة</th>
+                            <th class="text-right py-2">الوقت</th>
+                            <th class="text-right py-2">الكاشير</th>
+                            <th class="text-right py-2">الدفع</th>
+                            <th class="text-left py-2">المبلغ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="inv in recentInvoices" :key="inv.id">
+                            <tr class="border-b border-gray-700/50 hover:bg-gray-700/50 text-white">
+                                <td class="py-2 font-mono text-blue-400" x-text="inv.invoice_number"></td>
+                                <td class="py-2 text-gray-300" x-text="inv.time"></td>
+                                <td class="py-2 text-gray-300" x-text="inv.cashier"></td>
+                                <td class="py-2">
+                                    <span class="px-2 py-0.5 rounded-full text-xs" 
+                                          :class="{'bg-green-900 text-green-300': inv.payment_method=='cash', 
+                                                   'bg-blue-900 text-blue-300': inv.payment_method=='card',
+                                                   'bg-purple-900 text-purple-300': inv.payment_method=='bank',
+                                                   'bg-orange-900 text-orange-300': inv.payment_method=='credit',
+                                                   'bg-pink-900 text-pink-300': inv.payment_method=='mixed'}"
+                                          x-text="{'cash':'نقدي','card':'شبكة','bank':'بنك','credit':'آجل','mixed':'مختلط'}[inv.payment_method]">
+                                    </span>
+                                </td>
+                                <td class="py-2 text-left font-bold text-green-400" x-text="inv.total_amount + ' ر'"></td>
+                            </tr>
+                        </template>
+                        <tr x-show="recentInvoices.length === 0">
+                            <td colspan="5" class="text-center text-gray-500 py-8">لا توجد فواتير اليوم</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function posMenu() {
+        return {
+            cashierName: '{{ session.get("full_name", "كاشير") }}',
+            currentTime: '',
+            currentDate: '',
+            stats: {},
+            recentInvoices: [],
+
+            init() {
+                this.updateClock();
+                setInterval(() => this.updateClock(), 1000);
+                this.loadStats();
+                this.loadRecentInvoices();
+            },
+
+            updateClock() {
+                const now = new Date();
+                this.currentTime = now.toLocaleTimeString('ar-SA', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                this.currentDate = now.toLocaleDateString('ar-SA', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+            },
+
+            async loadStats() {
+                try {
+                    const res = await fetch('/api/pos/reports/daily');
+                    const data = await res.json();
+                    this.stats = data;
+                    const shift = await fetch('/api/pos/shift/current');
+                    const sd = await shift.json();
+                    this.stats.shift_status = sd.shift ? 'مفتوحة 🟢' : 'مغلقة 🔴';
+                } catch(e) {}
+            },
+
+            async loadRecentInvoices() {
+                try {
+                    const res = await fetch('/api/pos/recent-invoices');
+                    const data = await res.json();
+                    this.recentInvoices = data.invoices || [];
+                } catch(e) {}
+            }
+        }
+    }
+    </script>
+</body>
+</html>

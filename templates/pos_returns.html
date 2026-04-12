@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>المرتجعات - نقاط البيع</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        .return-item { animation: slideIn 0.2s ease; }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+    </style>
+</head>
+<body class="bg-gray-900 min-h-screen">
+    <div class="flex flex-col h-screen" x-data="posReturns()" x-init="init()">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-red-600 to-red-700 text-white p-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="{{ url_for('pos') }}" class="p-2 hover:bg-white/20 rounded-lg transition">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                </a>
+                <div>
+                    <h1 class="text-2xl font-bold flex items-center gap-2">
+                        <span>↩️</span> المرتجعات
+                    </h1>
+                    <p class="text-red-200 text-sm">إرجاع المبيعات واسترداد المبالغ</p>
+                </div>
+            </div>
+            <div class="text-lg font-mono" x-text="currentTime"></div>
+        </div>
+        
+        <div class="flex-1 flex overflow-hidden">
+            
+            <!-- Left: Search Invoice -->
+            <div class="w-1/2 bg-gray-100 p-6 overflow-y-auto">
+                
+                <!-- Search Box -->
+                <div class="bg-white rounded-2xl p-6 shadow-lg mb-6">
+                    <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                        <span>🔍</span> البحث عن فاتورة
+                    </h2>
+                    <div class="flex gap-3">
+                        <input type="text" x-model="invoiceSearch" 
+                               @keydown.enter="searchInvoice()"
+                               class="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-red-500 focus:ring-0"
+                               placeholder="رقم الفاتورة أو الباركود...">
+                        <button @click="searchInvoice()"
+                                class="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold">
+                            بحث
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Invoice Details -->
+                <div x-show="selectedInvoice" class="bg-white rounded-2xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-lg font-bold">فاتورة رقم: <span x-text="selectedInvoice?.invoice_number"></span></h3>
+                            <p class="text-gray-500 text-sm" x-text="selectedInvoice?.created_at"></p>
+                        </div>
+                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm" x-text="selectedInvoice?.payment_method"></span>
+                    </div>
+                    
+                    <!-- Invoice Items -->
+                    <div class="border-t pt-4">
+                        <h4 class="font-bold mb-3">أصناف الفاتورة:</h4>
+                        <div class="space-y-2 max-h-64 overflow-y-auto">
+                            <template x-for="item in selectedInvoice?.items || []" :key="item.id">
+                                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                                    <div class="flex-1">
+                                        <p class="font-medium" x-text="item.product_name"></p>
+                                        <p class="text-sm text-gray-500">
+                                            <span x-text="item.price"></span> × <span x-text="item.quantity"></span>
+                                        </p>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <p class="font-bold" x-text="formatPrice(item.total)"></p>
+                                        <button @click="addToReturn(item)"
+                                                :disabled="isItemReturned(item.id)"
+                                                class="px-3 py-1 bg-red-600 hover:bg-red-500 disabled:bg-gray-400 text-white rounded-lg text-sm">
+                                            <span x-text="isItemReturned(item.id) ? 'تمت الإضافة' : 'إرجاع'"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    
+                    <div class="border-t mt-4 pt-4 flex justify-between items-center">
+                        <span class="font-bold">إجمالي الفاتورة:</span>
+                        <span class="text-xl font-bold text-green-600" x-text="formatPrice(selectedInvoice?.total_amount)"></span>
+                    </div>
+                </div>
+                
+                <!-- No Invoice Selected -->
+                <div x-show="!selectedInvoice" class="bg-white rounded-2xl p-12 shadow-lg text-center text-gray-400">
+                    <span class="text-6xl">📄</span>
+                    <p class="mt-4">ابحث عن فاتورة لعرض تفاصيلها</p>
+                </div>
+            </div>
+            
+            <!-- Right: Return Items -->
+            <div class="w-1/2 bg-gray-800 p-6 flex flex-col">
+                
+                <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <span>🔄</span> أصناف الإرجاع
+                </h2>
+                
+                <!-- Return Items List -->
+                <div class="flex-1 overflow-y-auto space-y-2 mb-4">
+                    <template x-for="(item, index) in returnItems" :key="index">
+                        <div class="return-item bg-gray-700 rounded-xl p-4">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <p class="text-white font-medium" x-text="item.product_name"></p>
+                                    <p class="text-gray-400 text-sm">من فاتورة: <span x-text="item.invoice_number"></span></p>
+                                </div>
+                                <button @click="removeFromReturn(index)" class="text-red-400 hover:text-red-300">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="flex items-center justify-between mt-3">
+                                <div class="flex items-center gap-2">
+                                    <button @click="item.return_qty > 1 && item.return_qty--" 
+                                            class="w-8 h-8 bg-red-600 hover:bg-red-500 rounded text-white">−</button>
+                                    <input type="number" x-model.number="item.return_qty" min="1" :max="item.quantity"
+                                           class="w-16 text-center bg-gray-600 text-white rounded py-1">
+                                    <button @click="item.return_qty < item.quantity && item.return_qty++" 
+                                            class="w-8 h-8 bg-green-600 hover:bg-green-500 rounded text-white">+</button>
+                                    <span class="text-gray-400 text-sm">/ <span x-text="item.quantity"></span></span>
+                                </div>
+                                <p class="text-red-400 font-bold" x-text="formatPrice(item.price * item.return_qty)"></p>
+                            </div>
+                            
+                            <!-- Return Reason -->
+                            <div class="mt-3">
+                                <select x-model="item.reason" class="w-full bg-gray-600 text-white rounded-lg px-3 py-2 text-sm">
+                                    <option value="">-- سبب الإرجاع --</option>
+                                    <option value="defect">عيب في المنتج</option>
+                                    <option value="wrong">منتج خاطئ</option>
+                                    <option value="expired">منتهي الصلاحية</option>
+                                    <option value="customer">رغبة العميل</option>
+                                    <option value="other">سبب آخر</option>
+                                </select>
+                            </div>
+                        </div>
+                    </template>
+                    
+                    <!-- Empty State -->
+                    <div x-show="returnItems.length === 0" class="text-center py-12 text-gray-500">
+                        <span class="text-6xl">↩️</span>
+                        <p class="mt-4">لا توجد أصناف للإرجاع</p>
+                    </div>
+                </div>
+                
+                <!-- Return Total -->
+                <div class="bg-gray-700 rounded-xl p-4 mb-4">
+                    <div class="flex justify-between text-gray-400 mb-2">
+                        <span>عدد الأصناف:</span>
+                        <span x-text="returnItems.length"></span>
+                    </div>
+                    <div class="flex justify-between text-2xl font-bold text-white">
+                        <span>إجمالي المرتجع:</span>
+                        <span class="text-red-400" x-text="formatPrice(returnTotal)"></span>
+                    </div>
+                </div>
+                
+                <!-- Refund Method -->
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <button @click="refundMethod = 'cash'" 
+                            :class="refundMethod === 'cash' ? 'bg-green-600 ring-2 ring-white' : 'bg-gray-700'"
+                            class="p-4 rounded-xl text-white flex flex-col items-center gap-2">
+                        <span class="text-2xl">💵</span>
+                        <span>استرداد نقدي</span>
+                    </button>
+                    <button @click="refundMethod = 'credit'" 
+                            :class="refundMethod === 'credit' ? 'bg-blue-600 ring-2 ring-white' : 'bg-gray-700'"
+                            class="p-4 rounded-xl text-white flex flex-col items-center gap-2">
+                        <span class="text-2xl">💳</span>
+                        <span>رصيد للعميل</span>
+                    </button>
+                </div>
+                
+                <!-- Process Return -->
+                <button @click="processReturn()" 
+                        :disabled="returnItems.length === 0"
+                        class="w-full py-4 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 text-white rounded-xl font-bold text-lg flex items-center justify-center gap-2">
+                    <span>✓</span>
+                    تأكيد الإرجاع
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        function posReturns() {
+            return {
+                invoiceSearch: '',
+                selectedInvoice: null,
+                returnItems: [],
+                refundMethod: 'cash',
+                currentTime: '',
+                
+                init() {
+                    this.updateTime();
+                    setInterval(() => this.updateTime(), 1000);
+                },
+                
+                updateTime() {
+                    this.currentTime = new Date().toLocaleTimeString('ar-YE', { hour: '2-digit', minute: '2-digit' });
+                },
+                
+                formatPrice(price) {
+                    return new Intl.NumberFormat('ar-YE').format(price || 0) + ' ر.ي';
+                },
+                
+                get returnTotal() {
+                    return this.returnItems.reduce((sum, item) => sum + (item.price * item.return_qty), 0);
+                },
+                
+                searchInvoice() {
+                    if (!this.invoiceSearch.trim()) return;
+                    
+                    fetch(`/api/pos/invoice/${this.invoiceSearch}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.found) {
+                                this.selectedInvoice = data.invoice;
+                            } else {
+                                alert('لم يتم العثور على الفاتورة');
+                                this.selectedInvoice = null;
+                            }
+                        })
+                        .catch(() => alert('خطأ في البحث'));
+                },
+                
+                isItemReturned(itemId) {
+                    return this.returnItems.some(i => i.item_id === itemId);
+                },
+                
+                addToReturn(item) {
+                    if (this.isItemReturned(item.id)) return;
+                    
+                    this.returnItems.push({
+                        item_id: item.id,
+                        invoice_id: this.selectedInvoice.id,
+                        invoice_number: this.selectedInvoice.invoice_number,
+                        product_id: item.product_id,
+                        product_name: item.product_name,
+                        price: item.price,
+                        quantity: item.quantity,
+                        return_qty: item.quantity,
+                        reason: ''
+                    });
+                },
+                
+                removeFromReturn(index) {
+                    this.returnItems.splice(index, 1);
+                },
+                
+                processReturn() {
+                    if (this.returnItems.length === 0) return;
+                    
+                    // Validate reasons
+                    const missingReason = this.returnItems.find(i => !i.reason);
+                    if (missingReason) {
+                        alert('يرجى تحديد سبب الإرجاع لجميع الأصناف');
+                        return;
+                    }
+                    
+                    fetch('/api/pos/return', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            items: this.returnItems,
+                            refund_method: this.refundMethod,
+                            total: this.returnTotal
+                        })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(`تم إرجاع المبلغ: ${this.formatPrice(this.returnTotal)}\nرقم المرتجع: ${data.return_number}`);
+                            this.returnItems = [];
+                            this.selectedInvoice = null;
+                            this.invoiceSearch = '';
+                        } else {
+                            alert('فشل في معالجة الإرجاع');
+                        }
+                    })
+                    .catch(() => alert('خطأ في الاتصال'));
+                }
+            }
+        }
+    </script>
+</body>
+</html>

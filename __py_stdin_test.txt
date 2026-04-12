@@ -1,0 +1,3 @@
+﻿C:\Python314\python.exe
+stdin-ok
+

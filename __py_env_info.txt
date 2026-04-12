@@ -1,0 +1,10 @@
+﻿py : <string>:1: DeprecationWarning: The '__version__' attribute is deprecated and will be removed in Flask 3.2. Use feature detection or 'importlib.metadata.version("flask")' instead.
+At line:1 char:8
++ $out = py -c "import sys, flask; print(sys.executable); print(flask._ ...
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (<string>:1: Dep...ask")' instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+C:\Python314\python.exe
+3.1.2
+

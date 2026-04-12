@@ -6,13 +6,22 @@
 {% block page_subtitle %}إدارة الموردين والشركات{% endblock %}
 
 {% block header_actions %}
-<button onclick="openAddModal()" 
-        class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-    </svg>
-    <span>إضافة مورد</span>
-</button>
+<div class="flex gap-2">
+    <a href="{{ url_for('maps') }}" 
+       class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+        </svg>
+        <span>الخرائط</span>
+    </a>
+    <button onclick="openAddModal()" 
+            class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        <span>إضافة مورد</span>
+    </button>
+</div>
 {% endblock %}
 
 {% block content %}
@@ -81,7 +90,16 @@
                         </td>
                         <td class="px-6 py-4">
                             <div class="flex items-center justify-center gap-2">
-                                <button onclick="openEditModal({{ supplier.id }}, '{{ supplier.name }}', '{{ supplier.phone or '' }}', '{{ supplier.address or '' }}', '{{ supplier.notes or '' }}')"
+                                {% if supplier.latitude and supplier.longitude %}
+                                <button onclick="showOnMap({{ supplier.latitude }}, {{ supplier.longitude }}, '{{ supplier.name }}')"
+                                        class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="عرض على الخريطة">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    </svg>
+                                </button>
+                                {% endif %}
+                                <button onclick="openEditModal({{ supplier.id }})"
                                         class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="تعديل">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -130,35 +148,80 @@
             <div class="p-6 border-b border-gray-200">
                 <h3 id="modalTitle" class="text-xl font-bold text-gray-800">إضافة مورد جديد</h3>
             </div>
-            <form id="supplierForm" onsubmit="saveSupplier(event)" class="p-6 space-y-4">
+            <form id="supplierForm" onsubmit="saveSupplier(event)" class="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
                 <input type="hidden" id="supplierId" value="">
                 
+                <!-- اسم المورد -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">اسم المورد *</label>
                     <input type="text" id="supplierName" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
                            placeholder="مثال: شركة الجزيرة للمواد الغذائية">
                 </div>
-                
+
+                <!-- أرقام الجوال المتعددة -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">رقم الجوال</label>
-                    <input type="tel" id="supplierPhone"
-                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                           placeholder="مثال: 777123456">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-sm font-medium text-gray-700">أرقام الجوال</label>
+                        <button type="button" onclick="addPhone()"
+                                class="text-xs px-2 py-1 bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200">
+                            + إضافة رقم
+                        </button>
+                    </div>
+                    <div id="phonesContainer" class="space-y-2">
+                        <!-- تُضاف ديناميكياً -->
+                    </div>
                 </div>
-                
+
+                <!-- حساباتك عند المورد -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-sm font-medium text-gray-700">حساباتك المسجلة عند المورد</label>
+                        <button type="button" onclick="addAccount()"
+                                class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200">
+                            + إضافة حساب
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-2">الاسم الذي سجّلت به عند المورد (قد يكون اسم المحل أو اسمك)</p>
+                    <div id="accountsContainer" class="space-y-2">
+                        <!-- تُضاف ديناميكياً -->
+                    </div>
+                </div>
+
+                <!-- العنوان -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">العنوان</label>
                     <input type="text" id="supplierAddress"
-                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
                            placeholder="مثال: صنعاء - شارع الزبيري">
                 </div>
                 
+                <!-- ملاحظات -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">ملاحظات</label>
-                    <textarea id="supplierNotes" rows="3"
-                              class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    <textarea id="supplierNotes" rows="2"
+                              class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
                               placeholder="ملاحظات إضافية..."></textarea>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        📍 الموقع على الخريطة
+                        <span class="text-xs text-gray-500 mr-2">(اضغط على الخريطة لتحديد الموقع)</span>
+                    </label>
+                    <div id="mapPicker" class="h-48 rounded-xl border border-gray-300 overflow-hidden"></div>
+                    <input type="hidden" id="supplierLat">
+                    <input type="hidden" id="supplierLng">
+                    <div class="flex gap-2 mt-2">
+                        <button type="button" onclick="getCurrentLocation()" 
+                                class="text-sm px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200">
+                            📍 موقعي الحالي
+                        </button>
+                        <button type="button" onclick="clearLocation()" 
+                                class="text-sm px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                            ✕ مسح الموقع
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="flex gap-3 pt-4">
@@ -176,46 +239,231 @@
     </div>
 </div>
 
+<!-- Leaflet CSS & JS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
+let map = null;
+let marker = null;
+const defaultLat = 15.3694;  // اليمن - صنعاء
+const defaultLng = 44.1910;
+
 function suppliersApp() {
     return {
         search: '',
     }
 }
 
+function initMap(lat, lng) {
+    if (map) {
+        map.remove();
+    }
+    
+    const centerLat = lat || defaultLat;
+    const centerLng = lng || defaultLng;
+    
+    map = L.map('mapPicker').setView([centerLat, centerLng], lat ? 15 : 6);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+    
+    if (lat && lng) {
+        marker = L.marker([lat, lng]).addTo(map);
+        document.getElementById('supplierLat').value = lat;
+        document.getElementById('supplierLng').value = lng;
+    }
+    
+    map.on('click', function(e) {
+        setMarker(e.latlng.lat, e.latlng.lng);
+    });
+}
+
+function setMarker(lat, lng) {
+    if (marker) {
+        marker.setLatLng([lat, lng]);
+    } else {
+        marker = L.marker([lat, lng]).addTo(map);
+    }
+    document.getElementById('supplierLat').value = lat;
+    document.getElementById('supplierLng').value = lng;
+}
+
+function getCurrentLocation() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(pos) {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            map.setView([lat, lng], 15);
+            setMarker(lat, lng);
+        }, function() {
+            alert('لم نتمكن من الحصول على موقعك');
+        });
+    } else {
+        alert('المتصفح لا يدعم تحديد الموقع');
+    }
+}
+
+function clearLocation() {
+    if (marker) {
+        map.removeLayer(marker);
+        marker = null;
+    }
+    document.getElementById('supplierLat').value = '';
+    document.getElementById('supplierLng').value = '';
+}
+
+function addPhone(phone='', label='جوال', isPrimary=false) {
+    const c = document.getElementById('phonesContainer');
+    const div = document.createElement('div');
+    div.className = 'flex gap-2 items-center';
+    div.innerHTML = `
+        <select class="phone-label px-2 py-1.5 border border-gray-300 rounded-lg text-sm w-28 focus:ring-2 focus:ring-primary-500">
+            <option value="جوال" ${label==='جوال'?'selected':''}>جوال</option>
+            <option value="هاتف" ${label==='هاتف'?'selected':''}>هاتف</option>
+            <option value="مدير" ${label==='مدير'?'selected':''}>مدير</option>
+            <option value="مندوب" ${label==='مندوب'?'selected':''}>مندوب</option>
+            <option value="مستودع" ${label==='مستودع'?'selected':''}>مستودع</option>
+            <option value="واتساب" ${label==='واتساب'?'selected':''}>واتساب</option>
+        </select>
+        <input type="tel" class="phone-input flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" value="${phone}" placeholder="777123456">
+        <label class="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" class="phone-primary w-3.5 h-3.5" ${isPrimary?'checked':''}> رئيسي
+        </label>
+        <button type="button" onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>
+    `;
+    c.appendChild(div);
+}
+
+function addAccount(name='', number='', notes='') {
+    const c = document.getElementById('accountsContainer');
+    const div = document.createElement('div');
+    div.className = 'flex gap-2 items-center';
+    div.innerHTML = `
+        <input type="text" class="acc-name flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" value="${name}" placeholder="اسمك عند المورد (مثال: محلات النور)">
+        <input type="text" class="acc-number w-28 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" value="${number}" placeholder="رقم الحساب">
+        <button type="button" onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>
+    `;
+    c.appendChild(div);
+}
+
 function openAddModal() {
     document.getElementById('modalTitle').textContent = 'إضافة مورد جديد';
     document.getElementById('supplierId').value = '';
     document.getElementById('supplierName').value = '';
-    document.getElementById('supplierPhone').value = '';
     document.getElementById('supplierAddress').value = '';
     document.getElementById('supplierNotes').value = '';
+    document.getElementById('supplierLat').value = '';
+    document.getElementById('supplierLng').value = '';
+    document.getElementById('phonesContainer').innerHTML = '';
+    document.getElementById('accountsContainer').innerHTML = '';
+    addPhone();
     document.getElementById('supplierModal').classList.remove('hidden');
+    setTimeout(() => initMap(null, null), 100);
 }
 
-function openEditModal(id, name, phone, address, notes) {
+async function openEditModal(id) {
     document.getElementById('modalTitle').textContent = 'تعديل المورد';
     document.getElementById('supplierId').value = id;
-    document.getElementById('supplierName').value = name;
-    document.getElementById('supplierPhone').value = phone;
-    document.getElementById('supplierAddress').value = address;
-    document.getElementById('supplierNotes').value = notes;
-    document.getElementById('supplierModal').classList.remove('hidden');
+    document.getElementById('phonesContainer').innerHTML = '';
+    document.getElementById('accountsContainer').innerHTML = '';
+    try {
+        const res = await fetch(`/api/suppliers/${id}`);
+        const data = await res.json();
+        document.getElementById('supplierName').value = data.name || '';
+        document.getElementById('supplierAddress').value = data.address || '';
+        document.getElementById('supplierNotes').value = data.notes || '';
+        const lat = data.latitude || null;
+        const lng = data.longitude || null;
+        document.getElementById('supplierLat').value = lat || '';
+        document.getElementById('supplierLng').value = lng || '';
+        if (data.phones && data.phones.length > 0) {
+            data.phones.forEach(p => addPhone(p.phone, p.label, p.is_primary == 1));
+        } else {
+            addPhone(data.phone || '');
+        }
+        (data.accounts || []).forEach(a => addAccount(a.account_name, a.account_number || ''));
+        document.getElementById('supplierModal').classList.remove('hidden');
+        setTimeout(() => initMap(lat, lng), 100);
+    } catch { alert('حدث خطأ'); }
 }
 
 function closeModal() {
     document.getElementById('supplierModal').classList.add('hidden');
+    if (map) {
+        map.remove();
+        map = null;
+        marker = null;
+    }
+}
+
+function showOnMap(lat, lng, name) {
+    const mapModal = document.createElement('div');
+    mapModal.id = 'viewMapModal';
+    mapModal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4';
+    mapModal.innerHTML = `
+        <div class="fixed inset-0 bg-black/50" onclick="closeViewMap()"></div>
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl relative">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="font-bold text-lg">📍 موقع: ${name}</h3>
+                <button onclick="closeViewMap()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <div id="viewMap" class="h-96 rounded-b-2xl"></div>
+        </div>
+    `;
+    document.body.appendChild(mapModal);
+    
+    setTimeout(() => {
+        const viewMap = L.map('viewMap').setView([lat, lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(viewMap);
+        L.marker([lat, lng]).addTo(viewMap).bindPopup(name).openPopup();
+    }, 100);
+}
+
+function closeViewMap() {
+    const modal = document.getElementById('viewMapModal');
+    if (modal) modal.remove();
 }
 
 async function saveSupplier(e) {
     e.preventDefault();
     
     const id = document.getElementById('supplierId').value;
+    
+    // جمع الأرقام
+    const phones = [];
+    document.querySelectorAll('#phonesContainer > div').forEach(row => {
+        const phone = row.querySelector('.phone-input')?.value?.trim();
+        if (phone) phones.push({
+            phone,
+            label: row.querySelector('.phone-label')?.value || 'جوال',
+            is_primary: row.querySelector('.phone-primary')?.checked ? 1 : 0
+        });
+    });
+
+    // جمع الحسابات
+    const accounts = [];
+    document.querySelectorAll('#accountsContainer > div').forEach(row => {
+        const account_name = row.querySelector('.acc-name')?.value?.trim();
+        if (account_name) accounts.push({
+            account_name,
+            account_number: row.querySelector('.acc-number')?.value?.trim() || ''
+        });
+    });
+
+    const primaryPhone = phones.find(p => p.is_primary)?.phone || phones[0]?.phone || '';
     const data = {
         name: document.getElementById('supplierName').value,
-        phone: document.getElementById('supplierPhone').value,
+        phone: primaryPhone,
         address: document.getElementById('supplierAddress').value,
         notes: document.getElementById('supplierNotes').value,
+        latitude: document.getElementById('supplierLat').value || null,
+        longitude: document.getElementById('supplierLng').value || null,
+        phones,
+        accounts,
     };
     
     const url = id ? `/api/suppliers/${id}` : '/api/suppliers';
@@ -230,12 +478,13 @@ async function saveSupplier(e) {
         
         const result = await response.json();
         if (result.success) {
-            location.reload();
+            showSuccess(id ? 'تم تحديث المورد بنجاح' : 'تم إضافة المورد بنجاح');
+            setTimeout(() => location.reload(), 800);
         } else {
-            alert(result.message || 'حدث خطأ');
+            showError(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showError('تعذّر الاتصال بالخادم، تحقق من الشبكة');
     }
 }
 
@@ -246,12 +495,13 @@ async function deleteSupplier(id, name) {
         const response = await fetch(`/api/suppliers/${id}`, { method: 'DELETE' });
         const result = await response.json();
         if (result.success) {
-            location.reload();
+            showSuccess('تم حذف المورد');
+            setTimeout(() => location.reload(), 800);
         } else {
-            alert(result.message || 'حدث خطأ');
+            showError(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showError('تعذّر الاتصال بالخادم');
     }
 }
 </script>

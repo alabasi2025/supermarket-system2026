@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إدارة الوردية - نقاط البيع</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .pulse { animation: pulse 2s infinite; }
+    </style>
+</head>
+<body class="bg-gray-900 min-h-screen">
+    <div class="min-h-screen" x-data="posShift()" x-init="init()">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-700 text-white p-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="{{ url_for('pos') }}" class="p-2 hover:bg-white/20 rounded-lg transition">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                </a>
+                <div>
+                    <h1 class="text-2xl font-bold flex items-center gap-2">
+                        <span>⏰</span> إدارة الوردية
+                    </h1>
+                    <p class="text-indigo-200 text-sm">{{ session.get('full_name', 'كاشير') }}</p>
+                </div>
+            </div>
+            <div class="text-right">
+                <p class="text-2xl font-mono" x-text="currentTime"></p>
+                <p class="text-indigo-200 text-sm" x-text="currentDate"></p>
+            </div>
+        </div>
+        
+        <div class="container mx-auto p-6">
+            
+            <!-- No Active Shift - Open New -->
+            <div x-show="!activeShift" class="max-w-lg mx-auto">
+                <div class="bg-gray-800 rounded-3xl p-8 text-center">
+                    <div class="w-24 h-24 mx-auto bg-gradient-to-br from-green-400 to-emerald-600 rounded-full flex items-center justify-center mb-6">
+                        <span class="text-5xl">🔓</span>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white mb-2">فتح وردية جديدة</h2>
+                    <p class="text-gray-400 mb-6">أدخل الرصيد الافتتاحي لبدء الوردية</p>
+                    
+                    <div class="mb-6">
+                        <label class="block text-white/80 text-sm mb-2">الرصيد الافتتاحي</label>
+                        <input type="number" x-model.number="openingBalance"
+                               class="w-full px-4 py-3 text-2xl text-center bg-gray-700 text-white border-2 border-gray-600 rounded-xl focus:border-green-500"
+                               placeholder="0">
+                    </div>
+                    
+                    <button @click="openShift()"
+                            class="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-bold text-lg hover:from-green-400 hover:to-emerald-500 transition">
+                        🚀 بدء الوردية
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Active Shift -->
+            <div x-show="activeShift" x-cloak>
+                
+                <!-- Shift Status -->
+                <div class="bg-gradient-to-r from-green-600 to-emerald-700 rounded-2xl p-6 mb-6 flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <div class="w-4 h-4 bg-white rounded-full pulse"></div>
+                        <div>
+                            <p class="text-white/80 text-sm">الوردية الحالية</p>
+                            <p class="text-white text-xl font-bold">وردية رقم #<span x-text="activeShift?.id"></span></p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-white/80 text-sm">بدأت في</p>
+                        <p class="text-white font-bold" x-text="activeShift?.start_time"></p>
+                    </div>
+                </div>
+                
+                <!-- Statistics Grid -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-gray-800 rounded-2xl p-6 text-center">
+                        <div class="w-14 h-14 mx-auto bg-blue-500/20 rounded-xl flex items-center justify-center mb-3">
+                            <span class="text-3xl">🧾</span>
+                        </div>
+                        <p class="text-gray-400 text-sm">عدد الفواتير</p>
+                        <p class="text-3xl font-bold text-white" x-text="stats.total_invoices || 0"></p>
+                    </div>
+                    
+                    <div class="bg-gray-800 rounded-2xl p-6 text-center">
+                        <div class="w-14 h-14 mx-auto bg-green-500/20 rounded-xl flex items-center justify-center mb-3">
+                            <span class="text-3xl">💵</span>
+                        </div>
+                        <p class="text-gray-400 text-sm">المبيعات النقدية</p>
+                        <p class="text-2xl font-bold text-green-400" x-text="formatPrice(stats.cash_sales || 0)"></p>
+                    </div>
+                    
+                    <div class="bg-gray-800 rounded-2xl p-6 text-center">
+                        <div class="w-14 h-14 mx-auto bg-blue-500/20 rounded-xl flex items-center justify-center mb-3">
+                            <span class="text-3xl">💳</span>
+                        </div>
+                        <p class="text-gray-400 text-sm">مبيعات الشبكة</p>
+                        <p class="text-2xl font-bold text-blue-400" x-text="formatPrice(stats.card_sales || 0)"></p>
+                    </div>
+                    
+                    <div class="bg-gray-800 rounded-2xl p-6 text-center">
+                        <div class="w-14 h-14 mx-auto bg-purple-500/20 rounded-xl flex items-center justify-center mb-3">
+                            <span class="text-3xl">📊</span>
+                        </div>
+                        <p class="text-gray-400 text-sm">إجمالي المبيعات</p>
+                        <p class="text-2xl font-bold text-purple-400" x-text="formatPrice(stats.total_sales || 0)"></p>
+                    </div>
+                </div>
+                
+                <!-- Cash Summary -->
+                <div class="grid md:grid-cols-2 gap-6 mb-6">
+                    
+                    <!-- Expected Cash -->
+                    <div class="bg-gray-800 rounded-2xl p-6">
+                        <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                            <span>💰</span> ملخص النقدية
+                        </h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-gray-400">
+                                <span>الرصيد الافتتاحي:</span>
+                                <span class="text-white" x-text="formatPrice(activeShift?.opening_balance || 0)"></span>
+                            </div>
+                            <div class="flex justify-between text-gray-400">
+                                <span>المبيعات النقدية:</span>
+                                <span class="text-green-400">+ <span x-text="formatPrice(stats.cash_sales || 0)"></span></span>
+                            </div>
+                            <div class="flex justify-between text-gray-400">
+                                <span>المرتجعات النقدية:</span>
+                                <span class="text-red-400">- <span x-text="formatPrice(stats.cash_refunds || 0)"></span></span>
+                            </div>
+                            <div class="border-t border-gray-700 pt-3 flex justify-between text-lg font-bold">
+                                <span class="text-white">المتوقع في الصندوق:</span>
+                                <span class="text-yellow-400" x-text="formatPrice(expectedCash)"></span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Close Shift -->
+                    <div class="bg-gray-800 rounded-2xl p-6">
+                        <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                            <span>🔒</span> إغلاق الوردية
+                        </h3>
+                        
+                        <div class="mb-4">
+                            <label class="block text-gray-400 text-sm mb-2">المبلغ الفعلي في الصندوق</label>
+                            <input type="number" x-model.number="closingBalance"
+                                   class="w-full px-4 py-3 text-xl bg-gray-700 text-white border-2 border-gray-600 rounded-xl focus:border-red-500"
+                                   placeholder="أدخل المبلغ الفعلي">
+                        </div>
+                        
+                        <!-- Difference -->
+                        <div x-show="closingBalance > 0" class="mb-4 p-4 rounded-xl"
+                             :class="cashDifference === 0 ? 'bg-green-500/20' : cashDifference > 0 ? 'bg-blue-500/20' : 'bg-red-500/20'">
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-300">الفرق:</span>
+                                <span class="text-xl font-bold"
+                                      :class="cashDifference === 0 ? 'text-green-400' : cashDifference > 0 ? 'text-blue-400' : 'text-red-400'"
+                                      x-text="(cashDifference >= 0 ? '+' : '') + formatPrice(cashDifference)"></span>
+                            </div>
+                            <p class="text-sm mt-1"
+                               :class="cashDifference === 0 ? 'text-green-300' : cashDifference > 0 ? 'text-blue-300' : 'text-red-300'"
+                               x-text="cashDifference === 0 ? 'متطابق ✓' : cashDifference > 0 ? 'فائض في الصندوق' : 'عجز في الصندوق'"></p>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="block text-gray-400 text-sm mb-2">ملاحظات (اختياري)</label>
+                            <textarea x-model="closeNotes" rows="2"
+                                      class="w-full px-4 py-2 bg-gray-700 text-white border border-gray-600 rounded-xl"
+                                      placeholder="أي ملاحظات..."></textarea>
+                        </div>
+                        
+                        <button @click="closeShift()"
+                                :disabled="!closingBalance"
+                                class="w-full py-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 disabled:from-gray-600 disabled:to-gray-700 text-white rounded-xl font-bold text-lg transition">
+                            🔒 إغلاق الوردية
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Recent Invoices -->
+                <div class="bg-gray-800 rounded-2xl p-6">
+                    <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                        <span>📋</span> آخر الفواتير
+                    </h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-gray-400 border-b border-gray-700">
+                                    <th class="text-right py-3">رقم الفاتورة</th>
+                                    <th class="text-right py-3">الوقت</th>
+                                    <th class="text-right py-3">طريقة الدفع</th>
+                                    <th class="text-right py-3">المبلغ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="inv in recentInvoices" :key="inv.id">
+                                    <tr class="border-b border-gray-700/50 text-white">
+                                        <td class="py-3" x-text="inv.invoice_number"></td>
+                                        <td class="py-3 text-gray-400" x-text="inv.time"></td>
+                                        <td class="py-3">
+                                            <span class="px-2 py-1 rounded text-xs"
+                                                  :class="{
+                                                      'bg-green-500/20 text-green-400': inv.payment_method === 'cash',
+                                                      'bg-blue-500/20 text-blue-400': inv.payment_method === 'card',
+                                                      'bg-orange-500/20 text-orange-400': inv.payment_method === 'credit'
+                                                  }"
+                                                  x-text="inv.payment_method === 'cash' ? 'نقدي' : inv.payment_method === 'card' ? 'شبكة' : 'آجل'">
+                                            </span>
+                                        </td>
+                                        <td class="py-3 font-bold" x-text="formatPrice(inv.total_amount)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Shift Closed Modal -->
+        <div x-show="showClosedModal" x-cloak
+             class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-3xl max-w-md w-full p-8 text-center">
+                <div class="w-20 h-20 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-6">
+                    <span class="text-5xl">✅</span>
+                </div>
+                <h2 class="text-2xl font-bold mb-2">تم إغلاق الوردية</h2>
+                <p class="text-gray-500 mb-6">تم حفظ بيانات الوردية بنجاح</p>
+                
+                <div class="bg-gray-100 rounded-xl p-4 mb-6 text-right">
+                    <div class="flex justify-between mb-2">
+                        <span class="text-gray-500">إجمالي المبيعات:</span>
+                        <span class="font-bold" x-text="formatPrice(stats.total_sales)"></span>
+                    </div>
+                    <div class="flex justify-between mb-2">
+                        <span class="text-gray-500">عدد الفواتير:</span>
+                        <span class="font-bold" x-text="stats.total_invoices"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">الفرق:</span>
+                        <span class="font-bold" :class="cashDifference >= 0 ? 'text-green-600' : 'text-red-600'"
+                              x-text="formatPrice(cashDifference)"></span>
+                    </div>
+                </div>
+                
+                <div class="flex gap-3">
+                    <button @click="printReport()" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">
+                        🖨️ طباعة التقرير
+                    </button>
+                    <a href="{{ url_for('index') }}" class="flex-1 py-3 bg-gray-200 rounded-xl font-bold">
+                        الرئيسية
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        function posShift() {
+            return {
+                activeShift: null,
+                openingBalance: 0,
+                closingBalance: 0,
+                closeNotes: '',
+                stats: {},
+                recentInvoices: [],
+                showClosedModal: false,
+                currentTime: '',
+                currentDate: '',
+                
+                init() {
+                    this.updateDateTime();
+                    setInterval(() => this.updateDateTime(), 1000);
+                    this.loadShiftData();
+                },
+                
+                updateDateTime() {
+                    const now = new Date();
+                    this.currentTime = now.toLocaleTimeString('ar-YE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    this.currentDate = now.toLocaleDateString('ar-YE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                },
+                
+                formatPrice(price) {
+                    return new Intl.NumberFormat('ar-YE').format(price || 0) + ' ر.ي';
+                },
+                
+                get expectedCash() {
+                    return (this.activeShift?.opening_balance || 0) + (this.stats.cash_sales || 0) - (this.stats.cash_refunds || 0);
+                },
+                
+                get cashDifference() {
+                    return this.closingBalance - this.expectedCash;
+                },
+                
+                loadShiftData() {
+                    fetch('/api/pos/shift/current')
+                        .then(r => r.json())
+                        .then(data => {
+                            this.activeShift = data.shift;
+                            this.stats = data.stats || {};
+                            this.recentInvoices = data.recent_invoices || [];
+                        });
+                },
+                
+                openShift() {
+                    fetch('/api/pos/shift/open', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ opening_balance: this.openingBalance })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            this.loadShiftData();
+                        }
+                    });
+                },
+                
+                closeShift() {
+                    if (!confirm('هل أنت متأكد من إغلاق الوردية؟')) return;
+                    
+                    fetch('/api/pos/shift/close', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            closing_balance: this.closingBalance,
+                            notes: this.closeNotes
+                        })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            this.showClosedModal = true;
+                        }
+                    });
+                },
+                
+                printReport() {
+                    window.print();
+                }
+            }
+        }
+    </script>
+</body>
+</html>

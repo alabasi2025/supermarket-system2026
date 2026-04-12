@@ -1,0 +1,428 @@
+{% extends 'base.html' %}
+
+{% block title %}الدفعات والصلاحية - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}إدارة الدفعات والصلاحية{% endblock %}
+{% block page_subtitle %}تتبع تواريخ الإنتاج والانتهاء للمنتجات{% endblock %}
+
+{% block header_actions %}
+<button onclick="openAddBatchModal()" 
+        class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    <span>إضافة دفعة</span>
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <span class="text-2xl">📦</span>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">إجمالي الدفعات</p>
+                    <p class="text-2xl font-bold text-gray-800">{{ stats.total }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-2xl shadow-sm border border-red-200 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                    <span class="text-2xl">🚫</span>
+                </div>
+                <div>
+                    <p class="text-sm text-red-600">منتهية الصلاحية</p>
+                    <p class="text-2xl font-bold text-red-600">{{ stats.expired }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-2xl shadow-sm border border-orange-200 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                    <span class="text-2xl">⚠️</span>
+                </div>
+                <div>
+                    <p class="text-sm text-orange-600">أقل من 7 أيام</p>
+                    <p class="text-2xl font-bold text-orange-600">{{ stats.critical }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-2xl shadow-sm border border-yellow-200 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                    <span class="text-2xl">⏰</span>
+                </div>
+                <div>
+                    <p class="text-sm text-yellow-600">أقل من 30 يوم</p>
+                    <p class="text-2xl font-bold text-yellow-600">{{ stats.warning }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Filters -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div class="flex flex-wrap gap-2">
+            <button onclick="filterBatches('all')" id="filter-all"
+                    class="px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white">
+                الكل
+            </button>
+            <button onclick="filterBatches('expired')" id="filter-expired"
+                    class="px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-red-100 hover:text-red-700">
+                🚫 منتهية
+            </button>
+            <button onclick="filterBatches('critical')" id="filter-critical"
+                    class="px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-orange-100 hover:text-orange-700">
+                ⚠️ حرجة (7 أيام)
+            </button>
+            <button onclick="filterBatches('warning')" id="filter-warning"
+                    class="px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-yellow-100 hover:text-yellow-700">
+                ⏰ تحذير (30 يوم)
+            </button>
+            <button onclick="filterBatches('ok')" id="filter-ok"
+                    class="px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-green-100 hover:text-green-700">
+                ✅ سليمة
+            </button>
+        </div>
+    </div>
+    
+    <!-- Batches Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full" id="batchesTable">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الصنف</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">رقم الدفعة</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">تاريخ الإنتاج</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">تاريخ الانتهاء</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الحالة</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الكمية المتبقية</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600">الموقع</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600">الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for batch in batches %}
+                    <tr class="hover:bg-gray-50 transition-colors batch-row" data-status="{{ batch.expiry_status }}">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl flex items-center justify-center
+                                    {% if batch.expiry_status == 'expired' %}bg-red-100
+                                    {% elif batch.expiry_status == 'critical' %}bg-orange-100
+                                    {% elif batch.expiry_status == 'warning' %}bg-yellow-100
+                                    {% else %}bg-green-100{% endif %}">
+                                    <span class="text-xl">📦</span>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-gray-800">{{ batch.product_name }}</p>
+                                    {% if batch.supplier_name %}
+                                    <p class="text-sm text-gray-500">{{ batch.supplier_name }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="font-mono text-sm bg-gray-100 px-2 py-1 rounded">{{ batch.batch_number or '-' }}</span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ batch.production_date or '-' }}</td>
+                        <td class="px-6 py-4 text-sm font-medium
+                            {% if batch.expiry_status == 'expired' %}text-red-600
+                            {% elif batch.expiry_status == 'critical' %}text-orange-600
+                            {% elif batch.expiry_status == 'warning' %}text-yellow-600
+                            {% else %}text-green-600{% endif %}">
+                            {{ batch.expiry_date or '-' }}
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if batch.expiry_status == 'expired' %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                🚫 منتهية ({{ batch.days_until_expiry|int|abs }} يوم)
+                            </span>
+                            {% elif batch.expiry_status == 'critical' %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                ⚠️ {{ batch.days_until_expiry|int }} يوم
+                            </span>
+                            {% elif batch.expiry_status == 'warning' %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                ⏰ {{ batch.days_until_expiry|int }} يوم
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                ✅ {{ batch.days_until_expiry|int }} يوم
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="font-bold text-gray-800">{{ batch.quantity_remaining }}</span>
+                            <span class="text-gray-500 text-sm">{{ batch.unit or '' }}</span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ batch.location or '-' }}</td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="editBatch({{ batch.id }})" 
+                                        class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="تعديل">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                </button>
+                                {% if batch.expiry_status == 'expired' %}
+                                <button onclick="markAsReturned({{ batch.id }})" 
+                                        class="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title="إرجاع">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                                    </svg>
+                                </button>
+                                {% endif %}
+                                <button onclick="deleteBatch({{ batch.id }})" 
+                                        class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="حذف">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="px-6 py-12 text-center text-gray-500">
+                            <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <span class="text-3xl">📦</span>
+                            </div>
+                            <p>لا توجد دفعات مسجلة</p>
+                            <button onclick="openAddBatchModal()" class="mt-4 text-primary-600 hover:text-primary-700 font-medium">
+                                + إضافة دفعة جديدة
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Batch Modal -->
+<div id="batchModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+        <div class="p-6 border-b border-gray-100 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-t-2xl">
+            <div class="flex items-center justify-between">
+                <h3 id="batchModalTitle" class="text-xl font-bold">إضافة دفعة جديدة</h3>
+                <button onclick="closeBatchModal()" class="p-2 hover:bg-white/20 rounded-xl transition-colors">✕</button>
+            </div>
+        </div>
+        
+        <form id="batchForm" class="p-6 space-y-4">
+            <input type="hidden" id="batchId">
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">الصنف *</label>
+                <select id="batchProductId" required
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                    <option value="">-- اختر الصنف --</option>
+                    {% for product in products %}
+                    <option value="{{ product.id }}">{{ product.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">رقم الدفعة</label>
+                    <input type="text" id="batchNumber" placeholder="تلقائي إذا فارغ"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">الكمية *</label>
+                    <input type="number" id="batchQuantity" required min="0" step="0.01"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">تاريخ الإنتاج</label>
+                    <input type="date" id="batchProductionDate"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">تاريخ الانتهاء *</label>
+                    <input type="date" id="batchExpiryDate" required
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">سعر الشراء</label>
+                    <input type="number" id="batchPurchasePrice" min="0" step="0.01"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">الموقع</label>
+                    <input type="text" id="batchLocation" placeholder="مثال: رف A3"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                </div>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">ملاحظات</label>
+                <textarea id="batchNotes" rows="2"
+                          class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"></textarea>
+            </div>
+        </form>
+        
+        <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
+            <button onclick="closeBatchModal()" class="px-5 py-2.5 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200">
+                إلغاء
+            </button>
+            <button onclick="saveBatch()" class="px-5 py-2.5 text-white bg-primary-600 rounded-xl hover:bg-primary-700">
+                💾 حفظ
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentFilter = 'all';
+
+function filterBatches(status) {
+    currentFilter = status;
+    
+    // Update button styles
+    document.querySelectorAll('[id^="filter-"]').forEach(btn => {
+        btn.className = 'px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700';
+    });
+    document.getElementById('filter-' + status).className = 'px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white';
+    
+    // Filter rows
+    document.querySelectorAll('.batch-row').forEach(row => {
+        if (status === 'all' || row.dataset.status === status) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function openAddBatchModal() {
+    document.getElementById('batchModalTitle').textContent = 'إضافة دفعة جديدة';
+    document.getElementById('batchForm').reset();
+    document.getElementById('batchId').value = '';
+    document.getElementById('batchModal').classList.remove('hidden');
+    document.getElementById('batchModal').classList.add('flex');
+}
+
+function closeBatchModal() {
+    document.getElementById('batchModal').classList.add('hidden');
+    document.getElementById('batchModal').classList.remove('flex');
+}
+
+async function saveBatch() {
+    const id = document.getElementById('batchId').value;
+    
+    const data = {
+        product_id: document.getElementById('batchProductId').value,
+        batch_number: document.getElementById('batchNumber').value,
+        quantity: parseFloat(document.getElementById('batchQuantity').value) || 0,
+        production_date: document.getElementById('batchProductionDate').value,
+        expiry_date: document.getElementById('batchExpiryDate').value,
+        purchase_price: parseFloat(document.getElementById('batchPurchasePrice').value) || null,
+        location: document.getElementById('batchLocation').value,
+        notes: document.getElementById('batchNotes').value
+    };
+    
+    if (!data.product_id || !data.expiry_date) {
+        alert('يرجى ملء الحقول المطلوبة');
+        return;
+    }
+    
+    const url = id ? `/api/batches/${id}` : '/api/batches';
+    const method = id ? 'PUT' : 'POST';
+    
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            location.reload();
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الحفظ');
+    }
+}
+
+async function editBatch(id) {
+    try {
+        const response = await fetch(`/api/batches/${id}`);
+        const batch = await response.json();
+        
+        document.getElementById('batchModalTitle').textContent = 'تعديل الدفعة';
+        document.getElementById('batchId').value = batch.id;
+        document.getElementById('batchProductId').value = batch.product_id;
+        document.getElementById('batchNumber').value = batch.batch_number || '';
+        document.getElementById('batchQuantity').value = batch.quantity_remaining;
+        document.getElementById('batchProductionDate').value = batch.production_date || '';
+        document.getElementById('batchExpiryDate').value = batch.expiry_date || '';
+        document.getElementById('batchPurchasePrice').value = batch.purchase_price || '';
+        document.getElementById('batchLocation').value = batch.location || '';
+        document.getElementById('batchNotes').value = batch.notes || '';
+        
+        document.getElementById('batchModal').classList.remove('hidden');
+        document.getElementById('batchModal').classList.add('flex');
+    } catch (error) {
+        alert('حدث خطأ في جلب البيانات');
+    }
+}
+
+async function deleteBatch(id) {
+    if (!confirm('هل أنت متأكد من حذف هذه الدفعة؟')) return;
+    
+    try {
+        const response = await fetch(`/api/batches/${id}`, { method: 'DELETE' });
+        const result = await response.json();
+        
+        if (result.success) {
+            location.reload();
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الحذف');
+    }
+}
+
+async function markAsReturned(id) {
+    if (!confirm('هل تريد تسجيل هذه الدفعة كمُرجعة؟')) return;
+    
+    try {
+        const response = await fetch(`/api/batches/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'returned' })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            location.reload();
+        }
+    } catch (error) {
+        alert('حدث خطأ');
+    }
+}
+</script>
+{% endblock %}

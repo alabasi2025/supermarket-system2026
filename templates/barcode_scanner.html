@@ -1,0 +1,502 @@
+{% extends 'base.html' %}
+
+{% block title %}ماسح الباركود - نظام إدارة السوبرماركت{% endblock %}
+
+{% block page_title %}ماسح الباركود{% endblock %}
+{% block page_subtitle %}مسح الباركود للبحث عن الأصناف أو إضافتها{% endblock %}
+
+{% block content %}
+<!-- Include Html5-QRCode library -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<div class="max-w-4xl mx-auto space-y-6">
+    
+    <!-- Scanner Mode Toggle -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div class="flex flex-col md:flex-row gap-4 items-center justify-between mb-6">
+            <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <span class="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center">📷</span>
+                اختر طريقة المسح
+            </h2>
+            <div class="flex gap-2">
+                <button onclick="setMode('manual')" id="btnManual"
+                        class="px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white">
+                    ⌨️ إدخال يدوي / جهاز باركود
+                </button>
+                <button onclick="setMode('camera')" id="btnCamera"
+                        class="px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200">
+                    📱 كاميرا الموبايل
+                </button>
+            </div>
+        </div>
+        
+        <!-- Manual Input (for barcode scanner device or keyboard) -->
+        <div id="manualMode" class="space-y-4">
+            <div class="relative">
+                <input type="text" id="barcodeInput" 
+                       class="w-full px-6 py-4 text-2xl text-center border-2 border-primary-300 rounded-2xl focus:ring-4 focus:ring-primary-100 focus:border-primary-500 font-mono tracking-widest"
+                       placeholder="امسح الباركود أو أدخله يدوياً"
+                       autofocus
+                       onkeypress="if(event.key === 'Enter') searchBarcode()">
+                <button onclick="searchBarcode()" 
+                        class="absolute left-3 top-1/2 -translate-y-1/2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+                    🔍 بحث
+                </button>
+            </div>
+            <p class="text-center text-gray-500 text-sm">
+                💡 وجّه جهاز الباركود نحو الكود واضغط - أو أدخل الرقم يدوياً واضغط Enter
+            </p>
+        </div>
+        
+        <!-- Camera Mode -->
+        <div id="cameraMode" class="hidden space-y-4">
+            <div id="reader" class="w-full max-w-md mx-auto rounded-2xl overflow-hidden border-4 border-primary-200"></div>
+            <div class="flex justify-center gap-2">
+                <button onclick="startCamera()" id="startCameraBtn"
+                        class="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-medium">
+                    ▶️ تشغيل الكاميرا
+                </button>
+                <button onclick="stopCamera()" id="stopCameraBtn"
+                        class="px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium hidden">
+                    ⏹️ إيقاف الكاميرا
+                </button>
+            </div>
+            <p class="text-center text-gray-500 text-sm">
+                📱 وجّه كاميرا الموبايل نحو الباركود
+            </p>
+        </div>
+    </div>
+    
+    <!-- Last Scanned Barcode -->
+    <div id="lastScanned" class="hidden bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-4 border border-blue-100">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">🏷️</span>
+                <div>
+                    <p class="text-sm text-blue-600">آخر باركود تم مسحه</p>
+                    <p id="lastBarcodeValue" class="text-xl font-mono font-bold text-blue-800"></p>
+                </div>
+            </div>
+            <button onclick="copyBarcode()" class="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm hover:bg-blue-200">
+                📋 نسخ
+            </button>
+        </div>
+    </div>
+    
+    <!-- Result Area -->
+    <div id="resultArea" class="hidden">
+        <!-- Product Found -->
+        <div id="productFound" class="hidden bg-white rounded-2xl shadow-sm border border-green-200 overflow-hidden">
+            <div class="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4 text-white">
+                <h3 class="text-xl font-bold flex items-center gap-2">
+                    ✅ تم العثور على الصنف
+                </h3>
+            </div>
+            <div class="p-6">
+                <div class="flex items-start gap-6">
+                    <div class="w-20 h-20 bg-gradient-to-br from-primary-100 to-primary-200 rounded-2xl flex items-center justify-center text-4xl">
+                        📦
+                    </div>
+                    <div class="flex-1 space-y-3">
+                        <h4 id="productName" class="text-2xl font-bold text-gray-800"></h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="bg-gray-50 rounded-xl p-3">
+                                <p class="text-xs text-gray-500">الباركود</p>
+                                <p id="productBarcode" class="font-mono font-bold text-gray-800"></p>
+                            </div>
+                            <div class="bg-gray-50 rounded-xl p-3">
+                                <p class="text-xs text-gray-500">القسم</p>
+                                <p id="productCategory" class="font-bold text-gray-800"></p>
+                            </div>
+                            <div class="bg-gray-50 rounded-xl p-3">
+                                <p class="text-xs text-gray-500">المخزون</p>
+                                <p id="productStock" class="font-bold text-gray-800"></p>
+                            </div>
+                            <div class="bg-gray-50 rounded-xl p-3">
+                                <p class="text-xs text-gray-500">السعر</p>
+                                <p id="productPrice" class="font-bold text-green-600"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 flex gap-3">
+                    <a id="editProductBtn" href="#" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">
+                        ✏️ تعديل الصنف
+                    </a>
+                    <button onclick="resetScanner()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors">
+                        🔄 مسح آخر
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Product Not Found -->
+        <div id="productNotFound" class="hidden bg-white rounded-2xl shadow-sm border border-yellow-200 overflow-hidden">
+            <div class="bg-gradient-to-r from-yellow-500 to-orange-500 px-6 py-4 text-white">
+                <h3 class="text-xl font-bold flex items-center gap-2">
+                    ⚠️ الصنف غير موجود
+                </h3>
+            </div>
+            <div class="p-6 text-center">
+                <div class="w-24 h-24 bg-yellow-100 rounded-full flex items-center justify-center text-5xl mx-auto mb-4">
+                    🔍
+                </div>
+                <p class="text-gray-600 mb-2">الباركود:</p>
+                <p id="notFoundBarcode" class="text-2xl font-mono font-bold text-gray-800 mb-6"></p>
+                <p class="text-gray-500 mb-6">هل تريد إضافة صنف جديد بهذا الباركود؟</p>
+                <div class="flex justify-center gap-3">
+                    <button onclick="openAddProductModal()" class="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 transition-all font-medium shadow-lg">
+                        ➕ إضافة صنف جديد
+                    </button>
+                    <button onclick="resetScanner()" class="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors">
+                        🔄 مسح آخر
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Scan History -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            📜 سجل المسح
+            <span id="historyCount" class="text-sm font-normal text-gray-500">(0 عملية)</span>
+        </h3>
+        <div id="scanHistory" class="space-y-2 max-h-60 overflow-y-auto">
+            <p class="text-center text-gray-400 py-4">لم يتم مسح أي باركود بعد</p>
+        </div>
+    </div>
+</div>
+
+<!-- Add Product Modal -->
+<div id="addProductModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-t-2xl">
+            <div class="flex items-center justify-between">
+                <h3 class="text-xl font-bold flex items-center gap-2">
+                    ➕ إضافة صنف جديد
+                </h3>
+                <button onclick="closeAddProductModal()" class="p-2 hover:bg-white/20 rounded-xl transition-colors">
+                    ✕
+                </button>
+            </div>
+        </div>
+        
+        <form id="addProductForm" class="p-6 space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">الباركود</label>
+                    <input type="text" id="newProductBarcode" readonly
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl bg-gray-50 font-mono text-lg">
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">اسم الصنف *</label>
+                    <input type="text" id="newProductName" required
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500"
+                           placeholder="أدخل اسم الصنف">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">القسم</label>
+                    <select id="newProductCategory" 
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500">
+                        <option value="">-- اختر القسم --</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">الوحدة</label>
+                    <select id="newProductUnit" 
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500">
+                        {% for unit in units %}
+                        <option value="{{ unit.name }}">{{ unit.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">الحد الأدنى للمخزون</label>
+                    <input type="number" id="newProductMinStock" value="0" min="0"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">المخزون الحالي</label>
+                    <input type="number" id="newProductStock" value="0" min="0"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500">
+                </div>
+            </div>
+        </form>
+        
+        <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
+            <button onclick="closeAddProductModal()" class="px-5 py-2.5 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200">
+                إلغاء
+            </button>
+            <button onclick="saveNewProduct()" class="px-5 py-2.5 text-white bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl hover:from-green-600 hover:to-emerald-700">
+                💾 حفظ الصنف
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+let html5QrCode = null;
+let currentMode = 'manual';
+let scanHistory = [];
+let lastScannedBarcode = '';
+
+// Set scanning mode
+function setMode(mode) {
+    currentMode = mode;
+    
+    document.getElementById('btnManual').className = mode === 'manual' 
+        ? 'px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white'
+        : 'px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
+    
+    document.getElementById('btnCamera').className = mode === 'camera'
+        ? 'px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white'
+        : 'px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
+    
+    document.getElementById('manualMode').classList.toggle('hidden', mode !== 'manual');
+    document.getElementById('cameraMode').classList.toggle('hidden', mode !== 'camera');
+    
+    if (mode === 'manual') {
+        stopCamera();
+        document.getElementById('barcodeInput').focus();
+    }
+}
+
+// Start camera scanning
+function startCamera() {
+    html5QrCode = new Html5Qrcode("reader");
+    
+    html5QrCode.start(
+        { facingMode: "environment" },
+        {
+            fps: 10,
+            qrbox: { width: 250, height: 150 },
+            aspectRatio: 1.5
+        },
+        onScanSuccess,
+        onScanFailure
+    ).then(() => {
+        document.getElementById('startCameraBtn').classList.add('hidden');
+        document.getElementById('stopCameraBtn').classList.remove('hidden');
+    }).catch((err) => {
+        alert('لا يمكن الوصول للكاميرا: ' + err);
+    });
+}
+
+// Stop camera
+function stopCamera() {
+    if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().then(() => {
+            document.getElementById('startCameraBtn').classList.remove('hidden');
+            document.getElementById('stopCameraBtn').classList.add('hidden');
+        });
+    }
+}
+
+// On successful scan
+function onScanSuccess(decodedText, decodedResult) {
+    // Vibrate if supported
+    if (navigator.vibrate) navigator.vibrate(200);
+    
+    // Play beep sound
+    playBeep();
+    
+    // Process barcode
+    processBarcode(decodedText);
+}
+
+function onScanFailure(error) {
+    // Ignore scan failures
+}
+
+// Search barcode (manual input)
+function searchBarcode() {
+    const barcode = document.getElementById('barcodeInput').value.trim();
+    if (barcode) {
+        processBarcode(barcode);
+    }
+}
+
+// Process barcode
+async function processBarcode(barcode) {
+    lastScannedBarcode = barcode;
+    
+    // Show last scanned
+    document.getElementById('lastScanned').classList.remove('hidden');
+    document.getElementById('lastBarcodeValue').textContent = barcode;
+    
+    // Add to history
+    addToHistory(barcode);
+    
+    // Search for product
+    try {
+        const response = await fetch(`/api/barcode/${encodeURIComponent(barcode)}`);
+        const result = await response.json();
+        
+        document.getElementById('resultArea').classList.remove('hidden');
+        
+        if (result.found) {
+            showProductFound(result.product);
+        } else {
+            showProductNotFound(barcode);
+        }
+    } catch (error) {
+        alert('حدث خطأ في البحث');
+    }
+    
+    // Clear input
+    document.getElementById('barcodeInput').value = '';
+    document.getElementById('barcodeInput').focus();
+}
+
+// Show product found
+function showProductFound(product) {
+    document.getElementById('productFound').classList.remove('hidden');
+    document.getElementById('productNotFound').classList.add('hidden');
+    
+    document.getElementById('productName').textContent = product.name;
+    document.getElementById('productBarcode').textContent = product.barcode || '-';
+    document.getElementById('productCategory').textContent = product.category_name || 'غير مصنف';
+    document.getElementById('productStock').textContent = product.current_stock + ' ' + (product.unit || '');
+    document.getElementById('productPrice').textContent = (product.price || 0) + ' ريال';
+    document.getElementById('editProductBtn').href = '/products?edit=' + product.id;
+}
+
+// Show product not found
+function showProductNotFound(barcode) {
+    document.getElementById('productFound').classList.add('hidden');
+    document.getElementById('productNotFound').classList.remove('hidden');
+    document.getElementById('notFoundBarcode').textContent = barcode;
+}
+
+// Add to scan history
+function addToHistory(barcode) {
+    const now = new Date().toLocaleTimeString('ar-SA');
+    scanHistory.unshift({ barcode, time: now });
+    
+    if (scanHistory.length > 20) scanHistory.pop();
+    
+    updateHistoryDisplay();
+}
+
+// Update history display
+function updateHistoryDisplay() {
+    const container = document.getElementById('scanHistory');
+    document.getElementById('historyCount').textContent = `(${scanHistory.length} عملية)`;
+    
+    if (scanHistory.length === 0) {
+        container.innerHTML = '<p class="text-center text-gray-400 py-4">لم يتم مسح أي باركود بعد</p>';
+        return;
+    }
+    
+    container.innerHTML = scanHistory.map((item, i) => `
+        <div class="flex items-center justify-between px-4 py-2 rounded-xl ${i === 0 ? 'bg-primary-50 border border-primary-200' : 'bg-gray-50'} hover:bg-gray-100 transition-colors cursor-pointer"
+             onclick="processBarcode('${item.barcode}')">
+            <div class="flex items-center gap-3">
+                <span class="text-gray-400">${i + 1}</span>
+                <span class="font-mono font-bold text-gray-800">${item.barcode}</span>
+            </div>
+            <span class="text-sm text-gray-500">${item.time}</span>
+        </div>
+    `).join('');
+}
+
+// Reset scanner
+function resetScanner() {
+    document.getElementById('resultArea').classList.add('hidden');
+    document.getElementById('barcodeInput').value = '';
+    document.getElementById('barcodeInput').focus();
+}
+
+// Copy barcode
+function copyBarcode() {
+    navigator.clipboard.writeText(lastScannedBarcode);
+    alert('تم نسخ الباركود!');
+}
+
+// Open add product modal
+function openAddProductModal() {
+    document.getElementById('newProductBarcode').value = lastScannedBarcode;
+    document.getElementById('addProductModal').classList.remove('hidden');
+    document.getElementById('addProductModal').classList.add('flex');
+    document.getElementById('newProductName').focus();
+}
+
+// Close add product modal
+function closeAddProductModal() {
+    document.getElementById('addProductModal').classList.add('hidden');
+    document.getElementById('addProductModal').classList.remove('flex');
+    document.getElementById('addProductForm').reset();
+}
+
+// Save new product
+async function saveNewProduct() {
+    const name = document.getElementById('newProductName').value.trim();
+    if (!name) {
+        alert('يرجى إدخال اسم الصنف');
+        return;
+    }
+    
+    const data = {
+        name: name,
+        barcode: document.getElementById('newProductBarcode').value,
+        category_id: document.getElementById('newProductCategory').value || null,
+        unit: document.getElementById('newProductUnit').value,
+        min_stock: parseFloat(document.getElementById('newProductMinStock').value) || 0,
+        current_stock: parseFloat(document.getElementById('newProductStock').value) || 0
+    };
+    
+    try {
+        const response = await fetch('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            closeAddProductModal();
+            // Research the barcode to show the new product
+            processBarcode(lastScannedBarcode);
+            alert('✅ تم إضافة الصنف بنجاح!');
+        } else {
+            alert(result.message || 'حدث خطأ');
+        }
+    } catch (error) {
+        alert('حدث خطأ في الحفظ');
+    }
+}
+
+// Play beep sound
+function playBeep() {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.value = 1000;
+    oscillator.type = 'sine';
+    gainNode.gain.value = 0.3;
+    
+    oscillator.start();
+    setTimeout(() => oscillator.stop(), 100);
+}
+
+// Auto-focus on barcode input
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('barcodeInput').focus();
+});
+
+// Global key listener for barcode scanner devices
+document.addEventListener('keydown', (e) => {
+    if (currentMode === 'manual' && document.activeElement !== document.getElementById('barcodeInput')) {
+        document.getElementById('barcodeInput').focus();
+    }
+});
+</script>
+{% endblock %}

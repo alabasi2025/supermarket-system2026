@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تقارير POS - نقاط البيع</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div x-data="posReports()" x-init="init()">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="{{ url_for('pos') }}" class="p-2 hover:bg-white/20 rounded-lg transition">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                </a>
+                <div>
+                    <h1 class="text-2xl font-bold flex items-center gap-2">
+                        <span>📊</span> تقارير نقاط البيع
+                    </h1>
+                </div>
+            </div>
+            
+            <!-- Date Filter -->
+            <div class="flex items-center gap-3">
+                <input type="date" x-model="dateFrom" @change="loadReports()"
+                       class="px-3 py-2 rounded-lg bg-white/20 text-white border border-white/30">
+                <span>إلى</span>
+                <input type="date" x-model="dateTo" @change="loadReports()"
+                       class="px-3 py-2 rounded-lg bg-white/20 text-white border border-white/30">
+                <button @click="loadReports()" class="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg">
+                    🔄 تحديث
+                </button>
+            </div>
+        </div>
+        
+        <div class="container mx-auto p-6">
+            
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-2xl p-6 shadow-lg">
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center">
+                            <span class="text-3xl">💰</span>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 text-sm">إجمالي المبيعات</p>
+                            <p class="text-2xl font-bold text-green-600" x-text="formatPrice(summary.total_sales)"></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-2xl p-6 shadow-lg">
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center">
+                            <span class="text-3xl">🧾</span>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 text-sm">عدد الفواتير</p>
+                            <p class="text-2xl font-bold text-blue-600" x-text="summary.total_invoices || 0"></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-2xl p-6 shadow-lg">
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center">
+                            <span class="text-3xl">📦</span>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 text-sm">الأصناف المباعة</p>
+                            <p class="text-2xl font-bold text-purple-600" x-text="summary.total_items || 0"></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-2xl p-6 shadow-lg">
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 bg-orange-100 rounded-xl flex items-center justify-center">
+                            <span class="text-3xl">📈</span>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 text-sm">متوسط الفاتورة</p>
+                            <p class="text-2xl font-bold text-orange-600" x-text="formatPrice(summary.avg_invoice)"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Charts Row -->
+            <div class="grid md:grid-cols-2 gap-6 mb-6">
+                
+                <!-- Payment Methods -->
+                <div class="bg-white rounded-2xl p-6 shadow-lg">
+                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                        <span>💳</span> طرق الدفع
+                    </h3>
+                    <div class="h-64">
+                        <canvas id="paymentChart"></canvas>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mt-4">
+                        <div class="text-center p-3 bg-green-50 rounded-xl">
+                            <p class="text-sm text-gray-500">نقدي</p>
+                            <p class="text-lg font-bold text-green-600" x-text="formatPrice(summary.cash_sales)"></p>
+                        </div>
+                        <div class="text-center p-3 bg-blue-50 rounded-xl">
+                            <p class="text-sm text-gray-500">شبكة</p>
+                            <p class="text-lg font-bold text-blue-600" x-text="formatPrice(summary.card_sales)"></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sales by Hour -->
+                <div class="bg-white rounded-2xl p-6 shadow-lg">
+                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                        <span>⏰</span> المبيعات حسب الساعة
+                    </h3>
+                    <div class="h-64">
+                        <canvas id="hourlyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Top Products & Cashiers -->
+            <div class="grid md:grid-cols-2 gap-6 mb-6">
+                
+                <!-- Top Products -->
+                <div class="bg-white rounded-2xl p-6 shadow-lg">
+                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                        <span>🏆</span> أكثر المنتجات مبيعاً
+                    </h3>
+                    <div class="space-y-3">
+                        <template x-for="(product, index) in topProducts" :key="index">
+                            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                <span class="w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center text-white font-bold"
+                                      x-text="index + 1"></span>
+                                <div class="flex-1">
+                                    <p class="font-medium" x-text="product.name"></p>
+                                    <p class="text-sm text-gray-500" x-text="product.quantity + ' وحدة'"></p>
+                                </div>
+                                <p class="font-bold text-green-600" x-text="formatPrice(product.total)"></p>
+                            </div>
+                        </template>
+                        <div x-show="topProducts.length === 0" class="text-center py-8 text-gray-400">
+                            لا توجد بيانات
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Cashiers Performance -->
+                <div class="bg-white rounded-2xl p-6 shadow-lg">
+                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                        <span>👥</span> أداء الكاشير
+                    </h3>
+                    <div class="space-y-3">
+                        <template x-for="(cashier, index) in cashierStats" :key="index">
+                            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                <div class="w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold"
+                                     x-text="cashier.name ? cashier.name[0] : '?'"></div>
+                                <div class="flex-1">
+                                    <p class="font-medium" x-text="cashier.name"></p>
+                                    <p class="text-sm text-gray-500" x-text="cashier.invoices + ' فاتورة'"></p>
+                                </div>
+                                <p class="font-bold text-blue-600" x-text="formatPrice(cashier.total)"></p>
+                            </div>
+                        </template>
+                        <div x-show="cashierStats.length === 0" class="text-center py-8 text-gray-400">
+                            لا توجد بيانات
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Invoices -->
+            <div class="bg-white rounded-2xl p-6 shadow-lg">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold flex items-center gap-2">
+                        <span>📋</span> آخر الفواتير
+                    </h3>
+                    <button @click="exportReport()" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm flex items-center gap-2">
+                        <span>📥</span> تصدير Excel
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600">
+                                <th class="text-right p-3 rounded-r-lg">رقم الفاتورة</th>
+                                <th class="text-right p-3">التاريخ</th>
+                                <th class="text-right p-3">الكاشير</th>
+                                <th class="text-right p-3">طريقة الدفع</th>
+                                <th class="text-right p-3">الأصناف</th>
+                                <th class="text-right p-3 rounded-l-lg">المبلغ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="inv in recentInvoices" :key="inv.id">
+                                <tr class="border-b hover:bg-gray-50">
+                                    <td class="p-3 font-mono" x-text="inv.invoice_number"></td>
+                                    <td class="p-3 text-gray-500" x-text="inv.date"></td>
+                                    <td class="p-3" x-text="inv.cashier"></td>
+                                    <td class="p-3">
+                                        <span class="px-2 py-1 rounded text-xs"
+                                              :class="{
+                                                  'bg-green-100 text-green-700': inv.payment_method === 'cash',
+                                                  'bg-blue-100 text-blue-700': inv.payment_method === 'card',
+                                                  'bg-purple-100 text-purple-700': inv.payment_method === 'mixed',
+                                                  'bg-orange-100 text-orange-700': inv.payment_method === 'credit'
+                                              }"
+                                              x-text="getPaymentLabel(inv.payment_method)">
+                                        </span>
+                                    </td>
+                                    <td class="p-3" x-text="inv.items_count"></td>
+                                    <td class="p-3 font-bold text-green-600" x-text="formatPrice(inv.total_amount)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        function posReports() {
+            return {
+                dateFrom: new Date().toISOString().split('T')[0],
+                dateTo: new Date().toISOString().split('T')[0],
+                summary: {},
+                topProducts: [],
+                cashierStats: [],
+                recentInvoices: [],
+                paymentChart: null,
+                hourlyChart: null,
+                
+                init() {
+                    this.loadReports();
+                },
+                
+                formatPrice(price) {
+                    return new Intl.NumberFormat('ar-YE').format(price || 0) + ' ر.ي';
+                },
+                
+                getPaymentLabel(method) {
+                    const labels = { cash: 'نقدي', card: 'شبكة', bank: 'تحويل', credit: 'آجل', mixed: 'مختلط' };
+                    return labels[method] || method;
+                },
+                
+                loadReports() {
+                    fetch(`/api/pos/reports?from=${this.dateFrom}&to=${this.dateTo}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            this.summary = data.summary || {};
+                            this.topProducts = data.top_products || [];
+                            this.cashierStats = data.cashier_stats || [];
+                            this.recentInvoices = data.recent_invoices || [];
+                            
+                            this.renderPaymentChart(data.payment_breakdown || {});
+                            this.renderHourlyChart(data.hourly_sales || []);
+                        });
+                },
+                
+                renderPaymentChart(data) {
+                    const ctx = document.getElementById('paymentChart').getContext('2d');
+                    if (this.paymentChart) this.paymentChart.destroy();
+                    
+                    this.paymentChart = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['نقدي', 'شبكة', 'تحويل', 'آجل'],
+                            datasets: [{
+                                data: [data.cash || 0, data.card || 0, data.bank || 0, data.credit || 0],
+                                backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b']
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { position: 'bottom' } }
+                        }
+                    });
+                },
+                
+                renderHourlyChart(data) {
+                    const ctx = document.getElementById('hourlyChart').getContext('2d');
+                    if (this.hourlyChart) this.hourlyChart.destroy();
+                    
+                    const hours = Array.from({length: 24}, (_, i) => i + ':00');
+                    const values = hours.map((_, i) => {
+                        const found = data.find(d => parseInt(d.hour) === i);
+                        return found ? found.total : 0;
+                    });
+                    
+                    this.hourlyChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: hours,
+                            datasets: [{
+                                label: 'المبيعات',
+                                data: values,
+                                backgroundColor: '#3b82f6'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false } }
+                        }
+                    });
+                },
+                
+                exportReport() {
+                    window.open(`/api/pos/reports/export?from=${this.dateFrom}&to=${this.dateTo}`);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

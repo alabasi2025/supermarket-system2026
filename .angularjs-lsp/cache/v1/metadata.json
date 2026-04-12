@@ -1,0 +1,86 @@
+{
+  "version": 2,
+  "tool_version": "0.1.0",
+  "files": {
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\inventory.html": {
+      "mtime": 1775876135,
+      "size": 12026
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\competitor_prices.html": {
+      "mtime": 1775876135,
+      "size": 9982
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\supplier_prices.html": {
+      "mtime": 1775876135,
+      "size": 8196
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\categories.html": {
+      "mtime": 1775876135,
+      "size": 12772
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\supplier_invoice_form.html": {
+      "mtime": 1775876135,
+      "size": 11464
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\suppliers.html": {
+      "mtime": 1775876135,
+      "size": 14259
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\reports.html": {
+      "mtime": 1775876135,
+      "size": 11621
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\warehouse.html": {
+      "mtime": 1775876135,
+      "size": 6947
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\base.html": {
+      "mtime": 1775878187,
+      "size": 27206
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\products.html": {
+      "mtime": 1775876135,
+      "size": 18504
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\users.html": {
+      "mtime": 1775876135,
+      "size": 17167
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\login.html": {
+      "mtime": 1775877452,
+      "size": 8054
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\agent_invoices.html": {
+      "mtime": 1775876135,
+      "size": 6332
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\supplier_invoice_view.html": {
+      "mtime": 1775876135,
+      "size": 9484
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\dashboard.html": {
+      "mtime": 1775882301,
+      "size": 14683
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\sort_invoice.html": {
+      "mtime": 1775876135,
+      "size": 6224
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\change_password.html": {
+      "mtime": 1775876135,
+      "size": 3181
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\pricing.html": {
+      "mtime": 1775876135,
+      "size": 7506
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\supplier_invoices.html": {
+      "mtime": 1775876135,
+      "size": 6766
+    },
+    "d:\\alabasi2026\\supermarket-system2026\\templates\\supplier_products.html": {
+      "mtime": 1775876135,
+      "size": 12663
+    }
+  }
+}

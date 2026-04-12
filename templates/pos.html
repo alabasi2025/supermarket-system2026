@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نقاط البيع - السوبرماركت</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        .pos-container { height: 100vh; overflow: hidden; }
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+        .numpad-btn { 
+            font-size: 1.5rem; 
+            font-weight: bold;
+            transition: all 0.1s;
+        }
+        .numpad-btn:active { transform: scale(0.95); }
+        .cart-item { animation: slideIn 0.2s ease; }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+        .payment-btn { transition: all 0.2s; }
+        .payment-btn:hover { transform: translateY(-2px); }
+        .scanner-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); }
+        .category-tab.active { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; }
+        .offline-badge { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body class="bg-gray-900">
+    <div class="pos-container flex" x-data="posApp()" x-init="init()">
+        
+        <!-- Right Side: Products & Categories -->
+        <div class="flex-1 flex flex-col bg-gray-100 dark:bg-gray-800">
+            
+            <!-- Top Bar -->
+            <div class="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-3 flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <a href="{{ url_for('index') }}" class="p-2 hover:bg-white/20 rounded-lg transition">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                        </svg>
+                    </a>
+                    <div>
+                        <h1 class="text-xl font-bold">🏪 نقاط البيع</h1>
+                        <p class="text-xs text-blue-200">{{ session.get('full_name', 'كاشير') }}</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <!-- Connection Status -->
+                    <div x-show="!isOnline" class="offline-badge flex items-center gap-2 bg-red-500 px-3 py-1 rounded-full text-sm">
+                        <span class="w-2 h-2 bg-white rounded-full"></span>
+                        أوفلاين
+                    </div>
+                    <div x-show="isOnline" class="flex items-center gap-2 bg-green-500 px-3 py-1 rounded-full text-sm">
+                        <span class="w-2 h-2 bg-white rounded-full"></span>
+                        متصل
+                    </div>
+                    
+                    <!-- Time -->
+                    <div class="text-lg font-mono" x-text="currentTime"></div>
+                    
+                    <!-- Quick Actions -->
+                    <a href="{{ url_for('pos_returns') }}" class="p-2 hover:bg-white/20 rounded-lg" title="المرتجعات">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                        </svg>
+                    </a>
+                    
+                    <a href="{{ url_for('pos_shift') }}" class="p-2 hover:bg-white/20 rounded-lg" title="الوردية">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </a>
+                    
+                    <a href="{{ url_for('pos_reports') }}" class="p-2 hover:bg-white/20 rounded-lg" title="التقارير">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                    </a>
+                    
+                    <button @click="openHeldBills()" class="p-2 hover:bg-white/20 rounded-lg relative" title="الفواتير المعلقة">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                        <span x-show="heldBills.length > 0" x-text="heldBills.length" 
+                              class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs flex items-center justify-center"></span>
+                    </button>
+                    
+                    <button @click="logout()" class="p-2 hover:bg-white/20 rounded-lg" title="تسجيل خروج">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Search & Barcode -->
+            <div class="p-3 bg-white dark:bg-gray-700 border-b">
+                <div class="flex gap-2">
+                    <div class="flex-1 relative">
+                        <input type="text" x-model="searchQuery" x-ref="barcodeInput"
+                               @keydown.enter="handleBarcode()"
+                               @input="searchProducts()"
+                               class="scanner-input w-full px-4 py-3 pr-12 border-2 border-blue-300 rounded-xl text-lg focus:border-blue-500"
+                               placeholder="🔍 مسح الباركود أو البحث عن صنف...">
+                        <button @click="openCameraScanner()" 
+                                class="absolute left-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-blue-600">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Categories -->
+            <div class="p-2 bg-white dark:bg-gray-700 border-b overflow-x-auto">
+                <div class="flex gap-2 min-w-max">
+                    <button @click="selectedCategory = null; filterProducts()"
+                            :class="{'active': selectedCategory === null}"
+                            class="category-tab px-4 py-2 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 transition">
+                        الكل
+                    </button>
+                    {% for category in categories %}
+                    <button @click="selectedCategory = {{ category.id }}; filterProducts()"
+                            :class="{'active': selectedCategory === {{ category.id }}}"
+                            class="category-tab px-4 py-2 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 transition whitespace-nowrap">
+                        {{ category.name }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Products Grid -->
+            <div class="flex-1 p-3 overflow-y-auto">
+                <div class="product-grid">
+                    <template x-for="product in filteredProducts" :key="product.id">
+                        <button @click="addToCart(product)"
+                                class="bg-white dark:bg-gray-700 rounded-xl p-3 text-center hover:shadow-lg transition border-2 border-transparent hover:border-blue-400">
+                            <div class="w-12 h-12 mx-auto mb-2 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center">
+                                <span class="text-2xl">📦</span>
+                            </div>
+                            <p class="text-xs font-medium text-gray-800 dark:text-white line-clamp-2" x-text="product.name"></p>
+                            <p class="text-sm font-bold text-blue-600 mt-1" x-text="formatPrice(product.price)"></p>
+                        </button>
+                    </template>
+                </div>
+                
+                <!-- Empty State -->
+                <div x-show="filteredProducts.length === 0" class="text-center py-12 text-gray-400">
+                    <span class="text-6xl">📦</span>
+                    <p class="mt-4">لا توجد منتجات</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Left Side: Cart & Numpad -->
+        <div class="w-[420px] bg-gray-900 flex flex-col">
+            
+            <!-- Cart Header -->
+            <div class="p-4 bg-gray-800 border-b border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="text-2xl">🛒</span>
+                        <span class="text-white font-bold text-lg">الفاتورة</span>
+                        <span class="bg-blue-600 text-white px-2 py-0.5 rounded text-sm" x-text="'#' + invoiceNumber"></span>
+                    </div>
+                    <button @click="clearCart()" x-show="cart.length > 0"
+                            class="text-red-400 hover:text-red-300 text-sm flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                        مسح الكل
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Cart Items -->
+            <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                <template x-for="(item, index) in cart" :key="item.id + '-' + index">
+                    <div class="cart-item bg-gray-800 rounded-xl p-3 border border-gray-700"
+                         :class="{'ring-2 ring-blue-500': selectedCartItem === index}"
+                         @click="selectedCartItem = index">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-white font-medium truncate" x-text="item.name"></p>
+                                <p class="text-gray-400 text-sm" x-text="formatPrice(item.price) + ' × ' + item.qty"></p>
+                            </div>
+                            <div class="text-left">
+                                <p class="text-green-400 font-bold" x-text="formatPrice(item.price * item.qty)"></p>
+                                <div class="flex items-center gap-1 mt-1">
+                                    <button @click.stop="decreaseQty(index)" class="w-6 h-6 bg-red-600 hover:bg-red-500 rounded text-white text-sm">−</button>
+                                    <span class="text-white px-2" x-text="item.qty"></span>
+                                    <button @click.stop="increaseQty(index)" class="w-6 h-6 bg-green-600 hover:bg-green-500 rounded text-white text-sm">+</button>
+                                    <button @click.stop="removeFromCart(index)" class="w-6 h-6 bg-gray-600 hover:bg-gray-500 rounded text-white text-sm mr-1">✕</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                
+                <!-- Empty Cart -->
+                <div x-show="cart.length === 0" class="text-center py-12 text-gray-500">
+                    <span class="text-6xl">🛒</span>
+                    <p class="mt-4">السلة فارغة</p>
+                    <p class="text-sm">امسح الباركود أو اختر منتج</p>
+                </div>
+            </div>
+            
+            <!-- Totals -->
+            <div class="p-3 bg-gray-800 border-t border-gray-700 space-y-2">
+                <div class="flex justify-between text-gray-400">
+                    <span>عدد الأصناف:</span>
+                    <span x-text="cart.length"></span>
+                </div>
+                <div class="flex justify-between text-gray-400">
+                    <span>إجمالي الكمية:</span>
+                    <span x-text="totalQty"></span>
+                </div>
+                <div class="flex justify-between text-gray-400" x-show="discount > 0">
+                    <span>الخصم:</span>
+                    <span class="text-red-400" x-text="'-' + formatPrice(discount)"></span>
+                </div>
+                <div class="flex justify-between text-2xl font-bold text-white pt-2 border-t border-gray-700">
+                    <span>المجموع:</span>
+                    <span class="text-green-400" x-text="formatPrice(grandTotal)"></span>
+                </div>
+            </div>
+            
+            <!-- Numpad -->
+            <div class="p-2 bg-gray-800 border-t border-gray-700">
+                <div class="grid grid-cols-4 gap-1">
+                    <template x-for="key in ['7','8','9','⌫', '4','5','6','C', '1','2','3','+', '0','00','.','−']">
+                        <button @click="handleNumpad(key)"
+                                class="numpad-btn h-12 rounded-lg text-white"
+                                :class="{
+                                    'bg-gray-700 hover:bg-gray-600': !['⌫','C','+','−'].includes(key),
+                                    'bg-red-600 hover:bg-red-500': key === '⌫' || key === 'C',
+                                    'bg-green-600 hover:bg-green-500': key === '+',
+                                    'bg-orange-600 hover:bg-orange-500': key === '−'
+                                }"
+                                x-text="key">
+                        </button>
+                    </template>
+                </div>
+            </div>
+            
+            <!-- Payment Buttons -->
+            <div class="p-2 bg-gray-800 border-t border-gray-700">
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                    <button @click="holdBill()" :disabled="cart.length === 0"
+                            class="payment-btn flex items-center justify-center gap-2 p-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl text-white font-bold">
+                        <span class="text-xl">⏸</span>
+                        <span>تعليق</span>
+                    </button>
+                    <button @click="openDiscount()" :disabled="cart.length === 0"
+                            class="payment-btn flex items-center justify-center gap-2 p-3 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl text-white font-bold">
+                        <span class="text-xl">%</span>
+                        <span>خصم</span>
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-5 gap-2">
+                    <button @click="processPayment('cash')" :disabled="cart.length === 0"
+                            class="payment-btn flex flex-col items-center justify-center gap-1 p-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl text-white">
+                        <span class="text-2xl">💵</span>
+                        <span class="text-xs font-bold">نقدي</span>
+                    </button>
+                    <button @click="processPayment('card')" :disabled="cart.length === 0"
+                            class="payment-btn flex flex-col items-center justify-center gap-1 p-3 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl text-white">
+                        <span class="text-2xl">💳</span>
+                        <span class="text-xs font-bold">شبكة</span>
+                    </button>
+                    <button @click="openMixedPayment()" :disabled="cart.length === 0"
+                            class="payment-btn flex flex-col items-center justify-center gap-1 p-3 bg-gradient-to-br from-green-500 to-blue-500 hover:from-green-400 hover:to-blue-400 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl text-white">
+                        <span class="text-2xl">💰</span>
+                        <span class="text-xs font-bold">مختلط</span>
+                    </button>
+                    <button @click="processPayment('bank')" :disabled="cart.length === 0"
+                            class="payment-btn flex flex-col items-center justify-center gap-1 p-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl text-white">
+                        <span class="text-2xl">🏦</span>
+                        <span class="text-xs font-bold">تحويل</span>
+                    </button>
+                    <button @click="processPayment('credit')" :disabled="cart.length === 0"
+                            class="payment-btn flex flex-col items-center justify-center gap-1 p-3 bg-orange-600 hover:bg-orange-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl text-white">
+                        <span class="text-2xl">📝</span>
+                        <span class="text-xs font-bold">آجل</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Payment Modal -->
+        <div x-show="showPaymentModal" x-cloak
+             class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+             @click.self="showPaymentModal = false">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                <div class="p-6 bg-gradient-to-r from-green-500 to-green-600 text-white">
+                    <h3 class="text-2xl font-bold text-center">💳 إتمام الدفع</h3>
+                    <p class="text-center text-green-100 mt-1" x-text="paymentMethodText"></p>
+                </div>
+                
+                <div class="p-6 space-y-4">
+                    <div class="text-center">
+                        <p class="text-gray-500">المبلغ المطلوب</p>
+                        <p class="text-4xl font-bold text-gray-800" x-text="formatPrice(grandTotal)"></p>
+                    </div>
+                    
+                    <div x-show="paymentMethod === 'cash'">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">المبلغ المدفوع</label>
+                        <input type="number" x-model.number="paidAmount" 
+                               class="w-full px-4 py-3 text-2xl text-center border-2 border-gray-300 rounded-xl focus:border-green-500 focus:ring-0"
+                               placeholder="0">
+                        
+                        <div class="mt-4 grid grid-cols-4 gap-2">
+                            <template x-for="amount in quickAmounts">
+                                <button @click="paidAmount = amount"
+                                        class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-bold"
+                                        x-text="formatPrice(amount)">
+                                </button>
+                            </template>
+                        </div>
+                        
+                        <div x-show="change >= 0" class="mt-4 p-4 bg-green-50 rounded-xl text-center">
+                            <p class="text-gray-600">الباقي</p>
+                            <p class="text-3xl font-bold text-green-600" x-text="formatPrice(change)"></p>
+                        </div>
+                    </div>
+                    
+                    <div x-show="paymentMethod === 'credit'" class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">اسم العميل</label>
+                            <input type="text" x-model="customerName" 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-xl">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف</label>
+                            <input type="text" x-model="customerPhone" 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-xl">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="p-4 bg-gray-50 flex gap-3">
+                    <button @click="showPaymentModal = false"
+                            class="flex-1 px-4 py-3 bg-gray-200 hover:bg-gray-300 rounded-xl font-bold">
+                        إلغاء
+                    </button>
+                    <button @click="confirmPayment()"
+                            :disabled="paymentMethod === 'cash' && paidAmount < grandTotal"
+                            class="flex-1 px-4 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-400 text-white rounded-xl font-bold">
+                        ✅ تأكيد الدفع
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Receipt Modal -->
+        <div x-show="showReceiptModal" x-cloak
+             class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+                <div id="receipt" class="p-6 bg-white text-black">
+                    <div class="text-center border-b-2 border-dashed pb-4 mb-4">
+                        <h2 class="text-xl font-bold">🏪 السوبرماركت</h2>
+                        <p class="text-sm text-gray-600">فاتورة مبيعات</p>
+                        <p class="text-xs text-gray-500" x-text="new Date().toLocaleString('ar-YE')"></p>
+                        <p class="text-sm font-mono mt-1" x-text="'فاتورة رقم: ' + lastInvoiceNumber"></p>
+                    </div>
+                    
+                    <div class="space-y-2 text-sm border-b-2 border-dashed pb-4 mb-4">
+                        <template x-for="item in lastReceipt" :key="item.id">
+                            <div class="flex justify-between">
+                                <span x-text="item.name + ' ×' + item.qty"></span>
+                                <span x-text="formatPrice(item.price * item.qty)"></span>
+                            </div>
+                        </template>
+                    </div>
+                    
+                    <div class="space-y-1 text-sm">
+                        <div class="flex justify-between">
+                            <span>المجموع:</span>
+                            <span class="font-bold" x-text="formatPrice(lastTotal)"></span>
+                        </div>
+                        <div class="flex justify-between" x-show="lastPaid > 0">
+                            <span>المدفوع:</span>
+                            <span x-text="formatPrice(lastPaid)"></span>
+                        </div>
+                        <div class="flex justify-between" x-show="lastChange > 0">
+                            <span>الباقي:</span>
+                            <span x-text="formatPrice(lastChange)"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center mt-4 pt-4 border-t-2 border-dashed">
+                        <p class="text-sm">شكراً لزيارتكم 🙏</p>
+                    </div>
+                </div>
+                
+                <div class="p-4 bg-gray-50 flex gap-3">
+                    <button @click="printReceipt()"
+                            class="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold flex items-center justify-center gap-2">
+                        <span>🖨️</span> طباعة
+                    </button>
+                    <button @click="showReceiptModal = false; newInvoice()"
+                            class="flex-1 px-4 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold flex items-center justify-center gap-2">
+                        <span>✨</span> فاتورة جديدة
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Camera Scanner Modal -->
+        <div x-show="showCameraScanner" x-cloak
+             class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden">
+                <div class="p-4 bg-blue-600 text-white flex justify-between items-center">
+                    <h3 class="font-bold">📷 مسح الباركود</h3>
+                    <button @click="closeCameraScanner()" class="text-2xl">&times;</button>
+                </div>
+                <div id="camera-scanner" class="w-full aspect-square"></div>
+            </div>
+        </div>
+        
+        <!-- Held Bills Modal -->
+        <div x-show="showHeldBillsModal" x-cloak
+             class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+             @click.self="showHeldBillsModal = false">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+                <div class="p-4 bg-yellow-500 text-white">
+                    <h3 class="text-xl font-bold">⏸ الفواتير المعلقة</h3>
+                </div>
+                <div class="max-h-96 overflow-y-auto">
+                    <template x-for="(bill, index) in heldBills" :key="index">
+                        <div class="p-4 border-b hover:bg-gray-50 flex items-center justify-between">
+                            <div>
+                                <p class="font-bold" x-text="'فاتورة #' + bill.number"></p>
+                                <p class="text-sm text-gray-500" x-text="bill.time"></p>
+                                <p class="text-sm" x-text="bill.items.length + ' صنف - ' + formatPrice(bill.total)"></p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="restoreBill(index)" 
+                                        class="px-3 py-1 bg-green-600 text-white rounded-lg text-sm">استرجاع</button>
+                                <button @click="deleteHeldBill(index)"
+                                        class="px-3 py-1 bg-red-600 text-white rounded-lg text-sm">حذف</button>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="heldBills.length === 0" class="p-8 text-center text-gray-400">
+                        لا توجد فواتير معلقة
+                    </div>
+                </div>
+                <div class="p-4 bg-gray-50">
+                    <button @click="showHeldBillsModal = false" class="w-full py-2 bg-gray-200 rounded-lg">إغلاق</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Mixed Payment Modal -->
+        <div x-show="showMixedPayment" x-cloak
+             class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+             @click.self="showMixedPayment = false">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+                <div class="p-6 bg-gradient-to-r from-green-500 to-blue-600 text-white">
+                    <h3 class="text-2xl font-bold text-center">💰 دفع مختلط</h3>
+                    <p class="text-center text-white/80 mt-1">قسّم المبلغ على عدة طرق دفع</p>
+                </div>
+                
+                <div class="p-6">
+                    <!-- Total Required -->
+                    <div class="text-center mb-6 p-4 bg-gray-100 rounded-xl">
+                        <p class="text-gray-500">المبلغ المطلوب</p>
+                        <p class="text-3xl font-bold text-gray-800" x-text="formatPrice(grandTotal)"></p>
+                    </div>
+                    
+                    <!-- Payment Methods -->
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                                <span class="text-2xl">💵</span>
+                            </div>
+                            <div class="flex-1">
+                                <label class="text-sm text-gray-500">نقدي</label>
+                                <input type="number" x-model.number="mixedPayment.cash"
+                                       class="w-full px-4 py-2 border-2 border-gray-300 rounded-xl focus:border-green-500"
+                                       placeholder="0">
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                                <span class="text-2xl">💳</span>
+                            </div>
+                            <div class="flex-1">
+                                <label class="text-sm text-gray-500">شبكة</label>
+                                <input type="number" x-model.number="mixedPayment.card"
+                                       class="w-full px-4 py-2 border-2 border-gray-300 rounded-xl focus:border-blue-500"
+                                       placeholder="0">
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                                <span class="text-2xl">🏦</span>
+                            </div>
+                            <div class="flex-1">
+                                <label class="text-sm text-gray-500">تحويل بنكي</label>
+                                <input type="number" x-model.number="mixedPayment.bank"
+                                       class="w-full px-4 py-2 border-2 border-gray-300 rounded-xl focus:border-purple-500"
+                                       placeholder="0">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Summary -->
+                    <div class="mt-6 p-4 rounded-xl" :class="mixedTotal >= grandTotal ? 'bg-green-50' : 'bg-red-50'">
+                        <div class="flex justify-between mb-2">
+                            <span class="text-gray-600">إجمالي المدفوع:</span>
+                            <span class="font-bold" x-text="formatPrice(mixedTotal)"></span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">المتبقي:</span>
+                            <span class="font-bold" :class="mixedRemaining > 0 ? 'text-red-600' : 'text-green-600'"
+                                  x-text="formatPrice(mixedRemaining)"></span>
+                        </div>
+                        <div x-show="mixedChange > 0" class="flex justify-between mt-2 pt-2 border-t">
+                            <span class="text-gray-600">الباقي للعميل:</span>
+                            <span class="font-bold text-blue-600" x-text="formatPrice(mixedChange)"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="p-4 bg-gray-50 flex gap-3">
+                    <button @click="showMixedPayment = false"
+                            class="flex-1 px-4 py-3 bg-gray-200 hover:bg-gray-300 rounded-xl font-bold">
+                        إلغاء
+                    </button>
+                    <button @click="confirmMixedPayment()"
+                            :disabled="mixedTotal < grandTotal"
+                            class="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-400 hover:to-blue-500 disabled:from-gray-400 disabled:to-gray-500 text-white rounded-xl font-bold">
+                        ✅ تأكيد الدفع
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        function posApp() {
+            return {
+                // Data
+                products: {{ products|tojson|safe }},
+                filteredProducts: [],
+                cart: [],
+                selectedCartItem: null,
+                selectedCategory: null,
+                searchQuery: '',
+                invoiceNumber: 1,
+                discount: 0,
+                currentTime: '',
+                isOnline: navigator.onLine,
+                
+                // Payment
+                showPaymentModal: false,
+                paymentMethod: 'cash',
+                paidAmount: 0,
+                customerName: '',
+                customerPhone: '',
+                
+                // Receipt
+                showReceiptModal: false,
+                lastReceipt: [],
+                lastTotal: 0,
+                lastPaid: 0,
+                lastChange: 0,
+                lastInvoiceNumber: '',
+                
+                // Camera
+                showCameraScanner: false,
+                html5QrCode: null,
+                
+                // Held Bills
+                showHeldBillsModal: false,
+                heldBills: [],
+                
+                // Mixed Payment
+                showMixedPayment: false,
+                mixedPayment: { cash: 0, card: 0, bank: 0 },
+                
+                // Quick amounts
+                quickAmounts: [500, 1000, 2000, 5000, 10000, 20000, 50000, 100000],
+                
+                // Computed
+                get totalQty() {
+                    return this.cart.reduce((sum, item) => sum + item.qty, 0);
+                },
+                get subtotal() {
+                    return this.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+                },
+                get grandTotal() {
+                    return this.subtotal - this.discount;
+                },
+                get change() {
+                    return this.paidAmount - this.grandTotal;
+                },
+                get paymentMethodText() {
+                    const methods = { cash: '💵 نقدي', card: '💳 شبكة', bank: '🏦 تحويل بنكي', credit: '📝 آجل', mixed: '💰 مختلط' };
+                    return methods[this.paymentMethod] || '';
+                },
+                get mixedTotal() {
+                    return (this.mixedPayment.cash || 0) + (this.mixedPayment.card || 0) + (this.mixedPayment.bank || 0);
+                },
+                get mixedRemaining() {
+                    return this.grandTotal - this.mixedTotal;
+                },
+                get mixedChange() {
+                    return this.mixedTotal > this.grandTotal ? this.mixedTotal - this.grandTotal : 0;
+                },
+                
+                // Methods
+                init() {
+                    this.filteredProducts = this.products;
+                    this.loadHeldBills();
+                    this.loadInvoiceNumber();
+                    this.updateTime();
+                    setInterval(() => this.updateTime(), 1000);
+                    
+                    // Online/Offline detection
+                    window.addEventListener('online', () => this.isOnline = true);
+                    window.addEventListener('offline', () => this.isOnline = false);
+                    
+                    // Focus barcode input
+                    this.$nextTick(() => this.$refs.barcodeInput?.focus());
+                    
+                    // Keyboard shortcuts
+                    document.addEventListener('keydown', (e) => {
+                        if (e.key === 'F1') { e.preventDefault(); this.processPayment('cash'); }
+                        if (e.key === 'F2') { e.preventDefault(); this.processPayment('card'); }
+                        if (e.key === 'F3') { e.preventDefault(); this.holdBill(); }
+                        if (e.key === 'F4') { e.preventDefault(); this.openHeldBills(); }
+                        if (e.key === 'Escape') { this.closeAllModals(); }
+                    });
+                },
+                
+                updateTime() {
+                    this.currentTime = new Date().toLocaleTimeString('ar-YE', { hour: '2-digit', minute: '2-digit' });
+                },
+                
+                formatPrice(price) {
+                    return new Intl.NumberFormat('ar-YE').format(price || 0) + ' ر.ي';
+                },
+                
+                filterProducts() {
+                    let filtered = this.products;
+                    if (this.selectedCategory) {
+                        filtered = filtered.filter(p => p.category_id === this.selectedCategory);
+                    }
+                    if (this.searchQuery) {
+                        const q = this.searchQuery.toLowerCase();
+                        filtered = filtered.filter(p => 
+                            p.name.toLowerCase().includes(q) || 
+                            (p.barcode && p.barcode.includes(q))
+                        );
+                    }
+                    this.filteredProducts = filtered;
+                },
+                
+                searchProducts() {
+                    this.filterProducts();
+                },
+                
+                handleBarcode() {
+                    const barcode = this.searchQuery.trim();
+                    if (!barcode) return;
+                    
+                    const product = this.products.find(p => p.barcode === barcode);
+                    if (product) {
+                        this.addToCart(product);
+                        this.searchQuery = '';
+                        this.filterProducts();
+                    } else {
+                        // Search API
+                        fetch(`/api/barcode/${barcode}`)
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.found) {
+                                    this.addToCart(data.product);
+                                } else {
+                                    alert('الصنف غير موجود: ' + barcode);
+                                }
+                                this.searchQuery = '';
+                                this.filterProducts();
+                            })
+                            .catch(() => {
+                                alert('خطأ في البحث');
+                            });
+                    }
+                },
+                
+                addToCart(product) {
+                    const existing = this.cart.find(item => item.id === product.id);
+                    if (existing) {
+                        existing.qty++;
+                    } else {
+                        this.cart.push({
+                            id: product.id,
+                            name: product.name,
+                            price: product.price || 0,
+                            qty: 1,
+                            barcode: product.barcode
+                        });
+                    }
+                    this.selectedCartItem = this.cart.length - 1;
+                    this.$refs.barcodeInput?.focus();
+                },
+                
+                removeFromCart(index) {
+                    this.cart.splice(index, 1);
+                    this.selectedCartItem = null;
+                },
+                
+                increaseQty(index) {
+                    this.cart[index].qty++;
+                },
+                
+                decreaseQty(index) {
+                    if (this.cart[index].qty > 1) {
+                        this.cart[index].qty--;
+                    } else {
+                        this.removeFromCart(index);
+                    }
+                },
+                
+                clearCart() {
+                    if (confirm('هل تريد مسح جميع الأصناف؟')) {
+                        this.cart = [];
+                        this.discount = 0;
+                        this.selectedCartItem = null;
+                    }
+                },
+                
+                handleNumpad(key) {
+                    if (this.selectedCartItem === null) return;
+                    
+                    const item = this.cart[this.selectedCartItem];
+                    if (!item) return;
+                    
+                    if (key === '⌫') {
+                        item.qty = Math.floor(item.qty / 10) || 1;
+                    } else if (key === 'C') {
+                        this.removeFromCart(this.selectedCartItem);
+                    } else if (key === '+') {
+                        item.qty++;
+                    } else if (key === '−') {
+                        if (item.qty > 1) item.qty--;
+                    } else if (key === '.') {
+                        // Handle decimal
+                    } else {
+                        const num = parseInt(key);
+                        if (!isNaN(num)) {
+                            if (item.qty === 1 && num > 0) {
+                                item.qty = num;
+                            } else {
+                                item.qty = parseInt('' + item.qty + num) || 1;
+                            }
+                        }
+                    }
+                },
+                
+                processPayment(method) {
+                    if (this.cart.length === 0) return;
+                    
+                    this.paymentMethod = method;
+                    this.paidAmount = method === 'cash' ? 0 : this.grandTotal;
+                    this.showPaymentModal = true;
+                },
+                
+                confirmPayment() {
+                    // Save to local storage if offline
+                    const invoice = {
+                        number: this.invoiceNumber,
+                        items: [...this.cart],
+                        total: this.grandTotal,
+                        discount: this.discount,
+                        paymentMethod: this.paymentMethod,
+                        paidAmount: this.paidAmount,
+                        change: this.change,
+                        customer: this.paymentMethod === 'credit' ? { name: this.customerName, phone: this.customerPhone } : null,
+                        timestamp: new Date().toISOString(),
+                        synced: this.isOnline
+                    };
+                    
+                    // Save locally
+                    this.saveInvoice(invoice);
+                    
+                    // If online, send to server
+                    if (this.isOnline) {
+                        fetch('/api/pos/invoice', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(invoice)
+                        }).catch(err => console.log('Will sync later'));
+                    }
+                    
+                    // Show receipt
+                    this.lastReceipt = [...this.cart];
+                    this.lastTotal = this.grandTotal;
+                    this.lastPaid = this.paidAmount;
+                    this.lastChange = this.change > 0 ? this.change : 0;
+                    this.lastInvoiceNumber = this.invoiceNumber;
+                    
+                    this.showPaymentModal = false;
+                    this.showReceiptModal = true;
+                },
+                
+                saveInvoice(invoice) {
+                    const invoices = JSON.parse(localStorage.getItem('pos_invoices') || '[]');
+                    invoices.push(invoice);
+                    localStorage.setItem('pos_invoices', JSON.stringify(invoices));
+                    
+                    this.invoiceNumber++;
+                    localStorage.setItem('pos_invoice_number', this.invoiceNumber);
+                },
+                
+                loadInvoiceNumber() {
+                    this.invoiceNumber = parseInt(localStorage.getItem('pos_invoice_number') || '1');
+                },
+                
+                newInvoice() {
+                    this.cart = [];
+                    this.discount = 0;
+                    this.selectedCartItem = null;
+                    this.paidAmount = 0;
+                    this.customerName = '';
+                    this.customerPhone = '';
+                    this.$refs.barcodeInput?.focus();
+                },
+                
+                printReceipt() {
+                    const receipt = document.getElementById('receipt');
+                    const printWindow = window.open('', '', 'width=300,height=600');
+                    printWindow.document.write('<html><head><style>body{font-family:monospace;font-size:12px;}</style></head><body>');
+                    printWindow.document.write(receipt.innerHTML);
+                    printWindow.document.write('</body></html>');
+                    printWindow.document.close();
+                    printWindow.print();
+                },
+                
+                holdBill() {
+                    if (this.cart.length === 0) return;
+                    
+                    this.heldBills.push({
+                        number: this.invoiceNumber,
+                        items: [...this.cart],
+                        total: this.grandTotal,
+                        time: new Date().toLocaleTimeString('ar-YE')
+                    });
+                    this.saveHeldBills();
+                    
+                    this.invoiceNumber++;
+                    localStorage.setItem('pos_invoice_number', this.invoiceNumber);
+                    
+                    this.newInvoice();
+                    alert('تم تعليق الفاتورة');
+                },
+                
+                openHeldBills() {
+                    this.showHeldBillsModal = true;
+                },
+                
+                restoreBill(index) {
+                    const bill = this.heldBills[index];
+                    this.cart = [...bill.items];
+                    this.invoiceNumber = bill.number;
+                    this.heldBills.splice(index, 1);
+                    this.saveHeldBills();
+                    this.showHeldBillsModal = false;
+                },
+                
+                deleteHeldBill(index) {
+                    if (confirm('حذف هذه الفاتورة المعلقة؟')) {
+                        this.heldBills.splice(index, 1);
+                        this.saveHeldBills();
+                    }
+                },
+                
+                saveHeldBills() {
+                    localStorage.setItem('pos_held_bills', JSON.stringify(this.heldBills));
+                },
+                
+                loadHeldBills() {
+                    this.heldBills = JSON.parse(localStorage.getItem('pos_held_bills') || '[]');
+                },
+                
+                openDiscount() {
+                    const percent = prompt('نسبة الخصم (%):', '0');
+                    if (percent !== null) {
+                        this.discount = (this.subtotal * parseFloat(percent)) / 100;
+                    }
+                },
+                
+                openMixedPayment() {
+                    if (this.cart.length === 0) return;
+                    this.mixedPayment = { cash: 0, card: 0, bank: 0 };
+                    this.showMixedPayment = true;
+                },
+                
+                confirmMixedPayment() {
+                    if (this.mixedTotal < this.grandTotal) return;
+                    
+                    const invoice = {
+                        number: this.invoiceNumber,
+                        items: [...this.cart],
+                        total: this.grandTotal,
+                        discount: this.discount,
+                        paymentMethod: 'mixed',
+                        mixedPayment: { ...this.mixedPayment },
+                        paidAmount: this.mixedTotal,
+                        change: this.mixedChange,
+                        timestamp: new Date().toISOString(),
+                        synced: this.isOnline
+                    };
+                    
+                    this.saveInvoice(invoice);
+                    
+                    if (this.isOnline) {
+                        fetch('/api/pos/invoice', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(invoice)
+                        }).catch(err => console.log('Will sync later'));
+                    }
+                    
+                    this.lastReceipt = [...this.cart];
+                    this.lastTotal = this.grandTotal;
+                    this.lastPaid = this.mixedTotal;
+                    this.lastChange = this.mixedChange;
+                    this.lastInvoiceNumber = this.invoiceNumber;
+                    
+                    this.showMixedPayment = false;
+                    this.showReceiptModal = true;
+                },
+                
+                openCameraScanner() {
+                    this.showCameraScanner = true;
+                    this.$nextTick(() => {
+                        this.html5QrCode = new Html5Qrcode("camera-scanner");
+                        this.html5QrCode.start(
+                            { facingMode: "environment" },
+                            { fps: 10, qrbox: { width: 250, height: 250 } },
+                            (decodedText) => {
+                                this.searchQuery = decodedText;
+                                this.handleBarcode();
+                                this.closeCameraScanner();
+                            },
+                            (errorMessage) => {}
+                        ).catch(err => alert('لا يمكن فتح الكاميرا'));
+                    });
+                },
+                
+                closeCameraScanner() {
+                    if (this.html5QrCode) {
+                        this.html5QrCode.stop().then(() => {
+                            this.html5QrCode = null;
+                        });
+                    }
+                    this.showCameraScanner = false;
+                },
+                
+                closeAllModals() {
+                    this.showPaymentModal = false;
+                    this.showReceiptModal = false;
+                    this.showHeldBillsModal = false;
+                    this.closeCameraScanner();
+                },
+                
+                logout() {
+                    if (confirm('هل تريد تسجيل الخروج؟')) {
+                        window.location.href = '/logout';
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
