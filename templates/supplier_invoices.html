@@ -7,7 +7,7 @@
 
 {% block header_actions %}
 <a href="{{ url_for('new_supplier_invoice') }}" 
-   class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+   class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
     </svg>
@@ -37,7 +37,7 @@
                     {% for invoice in invoices %}
                     <tr class="hover:bg-gray-50 transition-colors">
                         <td class="px-6 py-4">
-                            <span class="font-bold text-primary-600">{{ invoice.invoice_number }}</span>
+                            <span class="font-bold text-indigo-600">{{ invoice.invoice_number }}</span>
                         </td>
                         <td class="px-6 py-4 font-medium text-gray-800">{{ invoice.supplier_name }}</td>
                         <td class="px-6 py-4 text-gray-600">{{ invoice.invoice_date }}</td>
@@ -84,7 +84,7 @@
                             </svg>
                             <p class="text-gray-500 mb-4">لا توجد فواتير بعد</p>
                             <a href="{{ url_for('new_supplier_invoice') }}" 
-                               class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700">
+                               class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700">
                                 إنشاء فاتورة جديدة
                             </a>
                         </td>
@@ -96,3 +96,4 @@
     </div>
 </div>
 {% endblock %}
+

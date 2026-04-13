@@ -1,248 +1,309 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 
-{% block title %}الرئيسية - نظام إدارة السوبرماركت{% endblock %}
-
+{% block title %}الرئيسية - نظام السوبرماركت{% endblock %}
 {% block page_title %}لوحة التحكم{% endblock %}
 {% block page_subtitle %}نظرة عامة على النظام{% endblock %}
 
 {% block content %}
 <div class="space-y-6">
     
-    <!-- Stats Cards -->
-    <div class="gap-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
+    <!-- ═══════════════ STATS CARDS ═══════════════ -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         
         <!-- الموردين -->
-        <div class="bg-white shadow-sm hover:shadow-md p-6 border border-gray-100 rounded-2xl transition-shadow">
-            <div class="flex items-center gap-4">
-                <div class="flex justify-center items-center bg-blue-100 rounded-xl w-12 h-12">
-                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                    </svg>
-                </div>
+        <div class="stat-card blue">
+            <div class="flex items-start justify-between">
                 <div>
-                    <p class="font-bold text-gray-800 text-2xl">{{ stats.suppliers }}</p>
-                    <p class="text-gray-500 text-sm">مورد</p>
+                    <p class="text-slate-500 text-sm font-medium mb-1">الموردين</p>
+                    <p class="text-3xl font-black text-slate-800">{{ stats.suppliers }}</p>
+                    <p class="text-xs text-slate-400 mt-2">مورد مسجّل</p>
+                </div>
+                <div class="icon-box icon-blue">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                    </svg>
                 </div>
             </div>
         </div>
         
         <!-- الأصناف -->
-        <div class="bg-white shadow-sm hover:shadow-md p-6 border border-gray-100 rounded-2xl transition-shadow">
-            <div class="flex items-center gap-4">
-                <div class="flex justify-center items-center bg-green-100 rounded-xl w-12 h-12">
-                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                    </svg>
-                </div>
+        <div class="stat-card green">
+            <div class="flex items-start justify-between">
                 <div>
-                    <p class="font-bold text-gray-800 text-2xl">{{ stats.products }}</p>
-                    <p class="text-gray-500 text-sm">صنف</p>
+                    <p class="text-slate-500 text-sm font-medium mb-1">الأصناف</p>
+                    <p class="text-3xl font-black text-slate-800">{{ "{:,}".format(stats.products) }}</p>
+                    <p class="text-xs text-slate-400 mt-2">صنف في المخزون</p>
+                </div>
+                <div class="icon-box icon-green">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                    </svg>
                 </div>
             </div>
         </div>
         
         <!-- تحت الحد الأدنى -->
-        <div class="bg-white shadow-sm hover:shadow-md p-6 border border-gray-100 rounded-2xl transition-shadow">
-            <div class="flex items-center gap-4">
-                <div class="flex justify-center items-center bg-red-100 rounded-xl w-12 h-12">
-                    <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                    </svg>
-                </div>
+        <div class="stat-card red">
+            <div class="flex items-start justify-between">
                 <div>
-                    <p class="font-bold text-red-600 text-2xl">{{ stats.low_stock }}</p>
-                    <p class="text-gray-500 text-sm">تحت الحد الأدنى</p>
+                    <p class="text-slate-500 text-sm font-medium mb-1">تحت الحد الأدنى</p>
+                    <p class="text-3xl font-black text-slate-800">{{ stats.low_stock }}</p>
+                    <p class="text-xs text-slate-400 mt-2">تحتاج إعادة طلب</p>
+                </div>
+                <div class="icon-box icon-red">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
                 </div>
             </div>
         </div>
         
-        <!-- فواتير معلقة -->
-        <div class="bg-white shadow-sm hover:shadow-md p-6 border border-gray-100 rounded-2xl transition-shadow">
-            <div class="flex items-center gap-4">
-                <div class="flex justify-center items-center bg-yellow-100 rounded-xl w-12 h-12">
-                    <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                </div>
+        <!-- الفواتير -->
+        <div class="stat-card purple">
+            <div class="flex items-start justify-between">
                 <div>
-                    <p class="font-bold text-yellow-600 text-2xl">{{ stats.pending_invoices }}</p>
-                    <p class="text-gray-500 text-sm">فواتير معلقة</p>
+                    <p class="text-slate-500 text-sm font-medium mb-1">الفواتير</p>
+                    <p class="text-3xl font-black text-slate-800">{{ stats.invoices }}</p>
+                    <p class="text-xs text-slate-400 mt-2">فاتورة مشتريات</p>
+                </div>
+                <div class="icon-box icon-purple">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
                 </div>
             </div>
         </div>
         
-        <!-- بانتظار الاستلام -->
-        <div class="bg-white shadow-sm hover:shadow-md p-6 border border-gray-100 rounded-2xl transition-shadow">
-            <div class="flex items-center gap-4">
-                <div class="flex justify-center items-center bg-purple-100 rounded-xl w-12 h-12">
-                    <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
-                    </svg>
-                </div>
+        <!-- الأقسام -->
+        <div class="stat-card orange">
+            <div class="flex items-start justify-between">
                 <div>
-                    <p class="font-bold text-purple-600 text-2xl">{{ stats.pending_receive }}</p>
-                    <p class="text-gray-500 text-sm">بانتظار الاستلام</p>
+                    <p class="text-slate-500 text-sm font-medium mb-1">الأقسام</p>
+                    <p class="text-3xl font-black text-slate-800">{{ stats.categories }}</p>
+                    <p class="text-xs text-slate-400 mt-2">قسم نشط</p>
+                </div>
+                <div class="icon-box icon-orange">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                    </svg>
                 </div>
             </div>
         </div>
     </div>
     
-    <!-- Two Columns -->
-    <div class="gap-6 grid grid-cols-1 lg:grid-cols-2">
+    <!-- ═══════════════ QUICK ACTIONS ═══════════════ -->
+    <div class="white-card">
+        <div class="white-card-header">
+            <h2 class="text-slate-800 font-bold text-lg flex items-center gap-2">
+                <div class="icon-box icon-indigo" style="width:36px;height:36px">
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+                إجراءات سريعة
+            </h2>
+        </div>
+        <div class="p-4">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                
+                <a href="{{ url_for('new_supplier_invoice') }}" class="group flex flex-col items-center gap-3 p-4 rounded-xl bg-slate-50 hover:bg-indigo-50 border-2 border-transparent hover:border-indigo-200 transition-all">
+                    <div class="icon-box icon-indigo group-hover:scale-110 transition-transform">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                        </svg>
+                    </div>
+                    <span class="text-sm font-semibold text-slate-600 group-hover:text-indigo-700 text-center">فاتورة جديدة</span>
+                </a>
+                
+                <a href="{{ url_for('products') }}" class="group flex flex-col items-center gap-3 p-4 rounded-xl bg-slate-50 hover:bg-green-50 border-2 border-transparent hover:border-green-200 transition-all">
+                    <div class="icon-box icon-green group-hover:scale-110 transition-transform">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                        </svg>
+                    </div>
+                    <span class="text-sm font-semibold text-slate-600 group-hover:text-green-700 text-center">الأصناف</span>
+                </a>
+                
+                <a href="/barcode-scanner" class="group flex flex-col items-center gap-3 p-4 rounded-xl bg-slate-50 hover:bg-purple-50 border-2 border-transparent hover:border-purple-200 transition-all">
+                    <div class="icon-box icon-purple group-hover:scale-110 transition-transform">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                        </svg>
+                    </div>
+                    <span class="text-sm font-semibold text-slate-600 group-hover:text-purple-700 text-center">ماسح الباركود</span>
+                </a>
+                
+                <a href="{{ url_for('inventory') }}" class="group flex flex-col items-center gap-3 p-4 rounded-xl bg-slate-50 hover:bg-teal-50 border-2 border-transparent hover:border-teal-200 transition-all">
+                    <div class="icon-box icon-teal group-hover:scale-110 transition-transform">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+                        </svg>
+                    </div>
+                    <span class="text-sm font-semibold text-slate-600 group-hover:text-teal-700 text-center">المخزون</span>
+                </a>
+                
+                <a href="{{ url_for('pricing') }}" class="group flex flex-col items-center gap-3 p-4 rounded-xl bg-slate-50 hover:bg-amber-50 border-2 border-transparent hover:border-amber-200 transition-all">
+                    <div class="icon-box icon-amber group-hover:scale-110 transition-transform">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                        </svg>
+                    </div>
+                    <span class="text-sm font-semibold text-slate-600 group-hover:text-amber-700 text-center">التسعيرات</span>
+                </a>
+                
+                <a href="{{ url_for('reports') }}" class="group flex flex-col items-center gap-3 p-4 rounded-xl bg-slate-50 hover:bg-blue-50 border-2 border-transparent hover:border-blue-200 transition-all">
+                    <div class="icon-box icon-blue group-hover:scale-110 transition-transform">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                    </div>
+                    <span class="text-sm font-semibold text-slate-600 group-hover:text-blue-700 text-center">التقارير</span>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ═══════════════ TWO COLUMNS ═══════════════ -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         <!-- آخر الفواتير -->
-        <div class="bg-white shadow-sm border border-gray-100 rounded-2xl overflow-hidden">
-            <div class="p-6 border-gray-100 border-b">
-                <div class="flex justify-between items-center">
-                    <h2 class="font-bold text-gray-800 text-lg">آخر الفواتير</h2>
-                    {% if session.role in ['manager', 'agent'] %}
-                    <a href="{{ url_for('supplier_invoices') }}" class="text-primary-600 hover:text-primary-700 text-sm">
-                        عرض الكل ←
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="divide-y divide-gray-100">
-                {% for invoice in recent_invoices %}
-                <div class="hover:bg-gray-50 p-4 transition-colors">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="font-medium text-gray-800">{{ invoice.invoice_number }}</p>
-                            <p class="text-gray-500 text-sm">{{ invoice.supplier_name }}</p>
-                        </div>
-                        <div class="text-left">
-                            <p class="font-bold text-gray-800">{{ "{:,.0f}".format(invoice.total_amount) }}</p>
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
-                                {% if invoice.status == 'pending' %}bg-yellow-100 text-yellow-800
-                                {% elif invoice.status == 'sorting' %}bg-blue-100 text-blue-800
-                                {% elif invoice.status == 'delivered' %}bg-purple-100 text-purple-800
-                                {% else %}bg-green-100 text-green-800{% endif %}">
-                                {% if invoice.status == 'pending' %}معلقة
-                                {% elif invoice.status == 'sorting' %}جاري الفرز
-                                {% elif invoice.status == 'delivered' %}تم التسليم
-                                {% else %}تم الاستلام{% endif %}
-                            </span>
-                        </div>
+        <div class="white-card">
+            <div class="white-card-header">
+                <h2 class="text-slate-800 font-bold flex items-center gap-2">
+                    <div class="icon-box icon-purple" style="width:32px;height:32px">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
                     </div>
-                </div>
-                {% else %}
-                <div class="p-8 text-gray-500 text-center">
-                    <svg class="mx-auto mb-3 w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    <p>لا توجد فواتير بعد</p>
-                </div>
-                {% endfor %}
+                    آخر الفواتير
+                </h2>
+                <a href="{{ url_for('supplier_invoices') }}" class="text-indigo-600 text-sm font-semibold hover:text-indigo-800">عرض الكل ←</a>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>رقم</th>
+                            <th>المورد</th>
+                            <th>التاريخ</th>
+                            <th>الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if recent_invoices %}
+                            {% for inv in recent_invoices %}
+                            <tr>
+                                <td class="font-mono font-bold text-indigo-600">#{{ inv.id }}</td>
+                                <td>{{ inv.supplier_name or '—' }}</td>
+                                <td class="text-slate-500">{{ inv.created_at[:10] if inv.created_at else '—' }}</td>
+                                <td>
+                                    {% if inv.status == 'completed' %}
+                                        <span class="badge badge-green">مكتمل</span>
+                                    {% elif inv.status == 'pending' %}
+                                        <span class="badge badge-yellow">قيد المعالجة</span>
+                                    {% else %}
+                                        <span class="badge badge-gray">{{ inv.status or 'جديد' }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr><td colspan="4" class="text-center text-slate-400 py-8">لا توجد فواتير حتى الآن</td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
             </div>
         </div>
         
-        <!-- أصناف تحت الحد الأدنى -->
-        <div class="bg-white shadow-sm border border-gray-100 rounded-2xl overflow-hidden">
-            <div class="p-6 border-gray-100 border-b">
-                <div class="flex justify-between items-center">
-                    <h2 class="font-bold text-gray-800 text-lg">⚠️ أصناف تحت الحد الأدنى</h2>
-                    {% if session.role in ['manager', 'warehouse'] %}
-                    <a href="{{ url_for('inventory') }}" class="text-primary-600 hover:text-primary-700 text-sm">
-                        عرض الكل ←
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="divide-y divide-gray-100 max-h-80 overflow-y-auto">
-                {% for item in low_stock_items %}
-                <div class="hover:bg-red-50 p-4 transition-colors">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="font-medium text-gray-800">{{ item.name }}</p>
-                            <p class="text-gray-500 text-sm">{{ item.category_name or 'بدون قسم' }}</p>
-                        </div>
-                        <div class="text-left">
-                            <p class="font-bold text-red-600">{{ item.current_stock }} {{ item.unit }}</p>
-                            <p class="text-gray-500 text-xs">الحد الأدنى: {{ item.min_stock }}</p>
-                        </div>
+        <!-- المخزون المنخفض -->
+        <div class="white-card">
+            <div class="white-card-header">
+                <h2 class="text-slate-800 font-bold flex items-center gap-2">
+                    <div class="icon-box icon-red" style="width:32px;height:32px">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
                     </div>
-                </div>
-                {% else %}
-                <div class="p-8 text-gray-500 text-center">
-                    <svg class="mx-auto mb-3 w-12 h-12 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <p class="text-green-600">جميع الأصناف فوق الحد الأدنى 👍</p>
-                </div>
-                {% endfor %}
+                    مخزون منخفض
+                </h2>
+                <a href="{{ url_for('inventory') }}" class="text-indigo-600 text-sm font-semibold hover:text-indigo-800">عرض الكل ←</a>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>الصنف</th>
+                            <th>الكمية</th>
+                            <th>الحد الأدنى</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if low_stock_items %}
+                            {% for item in low_stock_items %}
+                            <tr>
+                                <td class="font-medium">{{ item.name }}</td>
+                                <td><span class="badge badge-red">{{ item.quantity }}</span></td>
+                                <td class="text-slate-500">{{ item.min_stock }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr><td colspan="3" class="text-center text-slate-400 py-8">لا توجد أصناف تحت الحد الأدنى ✓</td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
     
-    <!-- Quick Actions -->
-    <div class="bg-white shadow-sm p-6 border border-gray-100 rounded-2xl">
-        <h2 class="mb-4 font-bold text-gray-800 text-lg">إجراءات سريعة</h2>
-        <div class="gap-4 grid grid-cols-2 md:grid-cols-4">
-            {% if session.role in ['manager', 'agent'] %}
-            
-            <a href="{{ url_for('new_supplier_invoice') }}" 
-               class="group flex flex-col items-center gap-3 bg-gradient-to-br from-primary-50 hover:from-primary-100 to-primary-100 hover:to-primary-200 p-4 rounded-xl transition-all">
-                <div class="flex justify-center items-center bg-primary-600 rounded-xl w-12 h-12 group-hover:scale-110 transition-transform">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    <!-- ═══════════════ ACTIVITY ═══════════════ -->
+    <div class="white-card">
+        <div class="white-card-header">
+            <h2 class="text-slate-800 font-bold flex items-center gap-2">
+                <div class="icon-box icon-teal" style="width:32px;height:32px">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                 </div>
-                <span class="font-medium text-primary-800 text-sm">فاتورة جديدة</span>
-            </a>
-
-            {% endif %}
-
-            {% if session.role == 'manager' %}
-            
-            <a href="{{ url_for('products') }}" 
-               class="group flex flex-col items-center gap-3 bg-gradient-to-br from-blue-50 hover:from-blue-100 to-blue-100 hover:to-blue-200 p-4 rounded-xl transition-all">
-                <div class="flex justify-center items-center bg-blue-600 rounded-xl w-12 h-12 group-hover:scale-110 transition-transform">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                    </svg>
-                </div>
-                <span class="font-medium text-blue-800 text-sm">إضافة صنف</span>
-            </a>
-
-            {% endif %}
-
-            {% if session.role in ['manager', 'warehouse'] %}
-            
-            <a href="{{ url_for('warehouse') }}" 
-               class="group flex flex-col items-center gap-3 bg-gradient-to-br from-purple-50 hover:from-purple-100 to-purple-100 hover:to-purple-200 p-4 rounded-xl transition-all">
-                <div class="flex justify-center items-center bg-purple-600 rounded-xl w-12 h-12 group-hover:scale-110 transition-transform">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
-                    </svg>
-                </div>
-                <span class="font-medium text-purple-800 text-sm">استلام بضاعة</span>
-            </a>
-
-            {% endif %}
-
-            {% if session.role == 'manager' %}
-            
-            <a href="{{ url_for('reports') }}" 
-               class="group flex flex-col items-center gap-3 bg-gradient-to-br from-yellow-50 hover:from-yellow-100 to-yellow-100 hover:to-yellow-200 p-4 rounded-xl transition-all">
-                <div class="flex justify-center items-center bg-yellow-600 rounded-xl w-12 h-12 group-hover:scale-110 transition-transform">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                </div>
-                <span class="font-medium text-yellow-800 text-sm">التقارير</span>
-            </a>
-
-            {% endif %}
+                آخر الحركات
+            </h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>التاريخ</th>
+                        <th>النوع</th>
+                        <th>الصنف</th>
+                        <th>الكمية</th>
+                        <th>الملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if recent_movements %}
+                        {% for mov in recent_movements %}
+                        <tr>
+                            <td class="text-slate-500 text-sm">{{ mov.created_at[:16] if mov.created_at else '—' }}</td>
+                            <td>
+                                {% if mov.movement_type == 'in' %}
+                                    <span class="badge badge-green">وارد</span>
+                                {% elif mov.movement_type == 'out' %}
+                                    <span class="badge badge-red">صادر</span>
+                                {% else %}
+                                    <span class="badge badge-blue">تعديل</span>
+                                {% endif %}
+                            </td>
+                            <td class="font-medium">{{ mov.product_name or '—' }}</td>
+                            <td class="font-mono font-bold {% if mov.quantity > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                                {% if mov.quantity > 0 %}+{% endif %}{{ mov.quantity }}
+                            </td>
+                            <td class="text-slate-500 text-sm">{{ mov.notes or '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="5" class="text-center text-slate-400 py-8">لا توجد حركات حتى الآن</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
         </div>
     </div>
     

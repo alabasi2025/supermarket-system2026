@@ -31,11 +31,11 @@
     <!-- Price Lists -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         {% for price_list in price_lists %}
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 {% if price_list.is_default %}ring-2 ring-primary-500{% endif %}">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 {% if price_list.is_default %}ring-2 ring-indigo-500{% endif %}">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="font-bold text-gray-800">{{ price_list.name }}</h3>
                 {% if price_list.is_default %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
                     الافتراضي
                 </span>
                 {% endif %}
@@ -52,7 +52,7 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">الصنف</label>
                 <select id="productId" required
-                        class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                        class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                     <option value="">-- اختر الصنف --</option>
                     {% for product in products %}
                     <option value="{{ product.id }}">{{ product.name }}</option>
@@ -62,7 +62,7 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">قائمة الأسعار</label>
                 <select id="priceListId" required
-                        class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                        class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                     {% for price_list in price_lists %}
                     <option value="{{ price_list.id }}">{{ price_list.name }}</option>
                     {% endfor %}
@@ -71,12 +71,12 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">السعر</label>
                 <input type="number" id="price" required min="0" step="0.01"
-                       class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
                        placeholder="0.00">
             </div>
             <div class="flex items-end">
                 <button type="submit" 
-                        class="w-full py-2 px-4 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+                        class="w-full py-2 px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
                     حفظ
                 </button>
             </div>
@@ -106,7 +106,7 @@
                                 {{ price.price_list_name }}
                             </span>
                         </td>
-                        <td class="px-6 py-4 font-bold text-primary-600">{{ "{:,.0f}".format(price.price) }}</td>
+                        <td class="px-6 py-4 font-bold text-indigo-600">{{ "{:,.0f}".format(price.price) }}</td>
                     </tr>
                     {% else %}
                     <tr>
@@ -155,3 +155,4 @@ async function saveProductPrice(e) {
 }
 </script>
 {% endblock %}
+

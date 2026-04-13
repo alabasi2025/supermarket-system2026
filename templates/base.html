@@ -1,12 +1,13 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" x-data="{ darkMode: localStorage.getItem('darkMode') === 'true' }" :class="{ 'dark': darkMode }">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{% block title %}نظام إدارة السوبرماركت{% endblock %}</title>
-    
-    <!-- Tailwind CSS -->
+    <title>{% block title %}سوبر ماركت العباسي{% endblock %}</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#6366f1">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -15,644 +16,499 @@
                 extend: {
                     colors: {
                         primary: {
-                            50: '#f0fdf4',
-                            100: '#dcfce7',
-                            200: '#bbf7d0',
-                            300: '#86efac',
-                            400: '#4ade80',
-                            500: '#22c55e',
-                            600: '#16a34a',
-                            700: '#15803d',
-                            800: '#166534',
-                            900: '#14532d',
-                        },
-                        accent: '#E3A530',
-                    },
-                    fontFamily: {
-                        'tajawal': ['Tajawal', 'sans-serif'],
+                            50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc',
+                            400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca',
+                            800: '#3730a3', 900: '#312e81', 950: '#1e1b4b'
+                        }
                     }
                 }
             }
         }
     </script>
-    
-    <!-- Google Fonts - Tajawal -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Alpine.js -->
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
-    <!-- Dark Mode Init (prevent flash) -->
-    <script>
-        if (localStorage.getItem('darkMode') === 'true') {
-            document.documentElement.classList.add('dark');
-        }
-    </script>
-    <script>
-        (function () {
-            const tokenMeta = document.querySelector('meta[name="csrf-token"]');
-            const csrfToken = tokenMeta ? tokenMeta.getAttribute('content') : '';
-
-            if (!csrfToken || typeof window.fetch !== 'function') {
-                return;
-            }
-
-            const originalFetch = window.fetch.bind(window);
-            window.fetch = function (input, init) {
-                const options = init ? { ...init } : {};
-                const method = (options.method || 'GET').toUpperCase();
-
-                if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-                    const headers = new Headers(options.headers || {});
-                    if (!headers.has('X-CSRF-Token')) {
-                        headers.set('X-CSRF-Token', csrfToken);
-                    }
-                    options.headers = headers;
-                }
-
-                return originalFetch(input, options);
-            };
-        })();
-    </script>
-    
     <style>
-        * { font-family: 'Tajawal', sans-serif; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        * { font-family: "Tajawal", sans-serif; }
+        :root { --sidebar: 280px; }
+        
+        /* ═══════ LIGHT MODE ═══════ */
+        body { 
+            background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%); 
+            min-height: 100vh; 
+            transition: background .3s ease;
+        }
+        .dark body, html.dark body { 
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); 
+        }
+        
+        /* ═══════ SIDEBAR ═══════ */
+        #sidebar {
+            width: var(--sidebar);
+            background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+            box-shadow: -4px 0 24px rgba(0,0,0,.04);
+            transition: background .3s ease, box-shadow .3s ease;
+        }
+        .dark #sidebar {
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+            box-shadow: -4px 0 24px rgba(0,0,0,.3);
+        }
+        #main { margin-right: var(--sidebar); }
+        
+        .nav-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 16px; margin: 4px 12px;
+            border-radius: 14px; text-decoration: none;
+            transition: all .2s ease; font-weight: 600; font-size: 14px;
+            color: #64748b;
+        }
+        .dark .nav-item { color: #94a3b8; }
+        .nav-item:hover { background: #f1f5f9; color: #334155; transform: translateX(-2px); }
+        .dark .nav-item:hover { background: #334155; color: #e2e8f0; }
+        .nav-item.active { background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%); color: #0369a1; }
+        .dark .nav-item.active { background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%); color: #60a5fa; }
+        
+        .nav-icon {
+            width: 36px; height: 36px;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .nav-icon svg { width: 18px; height: 18px; stroke-width: 2; }
+        
+        /* Icon Colors */
+        .gi-blue { background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #2563eb; }
+        .gi-green { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #16a34a; }
+        .gi-purple { background: linear-gradient(135deg, #e9d5ff, #d8b4fe); color: #9333ea; }
+        .gi-orange { background: linear-gradient(135deg, #ffedd5, #fed7aa); color: #ea580c; }
+        .gi-red { background: linear-gradient(135deg, #fee2e2, #fecaca); color: #dc2626; }
+        .gi-teal { background: linear-gradient(135deg, #ccfbf1, #99f6e4); color: #0d9488; }
+        .gi-pink { background: linear-gradient(135deg, #fce7f3, #fbcfe8); color: #db2777; }
+        .gi-indigo { background: linear-gradient(135deg, #e0e7ff, #c7d2fe); color: #4f46e5; }
+        .gi-amber { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #d97706; }
+        .gi-cyan { background: linear-gradient(135deg, #cffafe, #a5f3fc); color: #0891b2; }
+        .gi-emerald { background: linear-gradient(135deg, #d1fae5, #a7f3d0); color: #059669; }
+        .gi-rose { background: linear-gradient(135deg, #ffe4e6, #fecdd3); color: #e11d48; }
+        .gi-violet { background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #7c3aed; }
+        .gi-lime { background: linear-gradient(135deg, #ecfccb, #d9f99d); color: #65a30d; }
+        .gi-sky { background: linear-gradient(135deg, #e0f2fe, #bae6fd); color: #0284c7; }
+        .gi-fuchsia { background: linear-gradient(135deg, #fae8ff, #f5d0fe); color: #c026d3; }
+        .gi-logout { background: linear-gradient(135deg, #fee2e2, #fecaca); color: #dc2626; }
+        
+        /* Dark mode icons */
+        .dark .gi-blue { background: linear-gradient(135deg, #1e3a5f, #1e40af); color: #60a5fa; }
+        .dark .gi-green { background: linear-gradient(135deg, #14532d, #166534); color: #4ade80; }
+        .dark .gi-purple { background: linear-gradient(135deg, #581c87, #6b21a8); color: #c084fc; }
+        .dark .gi-orange { background: linear-gradient(135deg, #7c2d12, #9a3412); color: #fb923c; }
+        .dark .gi-red { background: linear-gradient(135deg, #7f1d1d, #991b1b); color: #f87171; }
+        .dark .gi-teal { background: linear-gradient(135deg, #134e4a, #115e59); color: #2dd4bf; }
+        .dark .gi-pink { background: linear-gradient(135deg, #831843, #9d174d); color: #f472b6; }
+        .dark .gi-indigo { background: linear-gradient(135deg, #312e81, #3730a3); color: #a5b4fc; }
+        .dark .gi-amber { background: linear-gradient(135deg, #78350f, #92400e); color: #fbbf24; }
+        .dark .gi-cyan { background: linear-gradient(135deg, #164e63, #155e75); color: #22d3ee; }
+        .dark .gi-emerald { background: linear-gradient(135deg, #064e3b, #065f46); color: #34d399; }
+        .dark .gi-rose { background: linear-gradient(135deg, #881337, #9f1239); color: #fb7185; }
+        .dark .gi-violet { background: linear-gradient(135deg, #4c1d95, #5b21b6); color: #a78bfa; }
+        .dark .gi-lime { background: linear-gradient(135deg, #365314, #3f6212); color: #a3e635; }
+        .dark .gi-sky { background: linear-gradient(135deg, #0c4a6e, #075985); color: #38bdf8; }
+        .dark .gi-fuchsia { background: linear-gradient(135deg, #701a75, #86198f); color: #e879f9; }
+        .dark .gi-logout { background: linear-gradient(135deg, #7f1d1d, #991b1b); color: #f87171; }
+        
+        .section-label {
+            font-size: 11px; font-weight: 800; color: #94a3b8;
+            padding: 16px 16px 6px; text-transform: uppercase; letter-spacing: 1px;
+        }
+        .dark .section-label { color: #64748b; }
+        
+        /* ═══════ CARDS ═══════ */
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 4px 24px rgba(0,0,0,.04);
+            border: 1px solid #f1f5f9;
+            transition: all .3s ease;
+        }
+        .dark .card {
+            background: #1e293b;
+            border-color: #334155;
+            box-shadow: 0 4px 24px rgba(0,0,0,.2);
+        }
+        
+        /* ═══════ BUTTONS ═══════ */
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 20px; border-radius: 12px;
+            font-weight: 700; font-size: 14px;
+            transition: all .2s ease; cursor: pointer; border: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: white;
+            box-shadow: 0 4px 16px rgba(99,102,241,.3);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(99,102,241,.4);
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: white;
+            box-shadow: 0 4px 16px rgba(34,197,94,.3);
+        }
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            box-shadow: 0 4px 16px rgba(239,68,68,.3);
+        }
+        
+        /* ═══════ TABLES ═══════ */
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th {
+            padding: 14px 16px; text-align: right;
+            font-size: 12px; font-weight: 700; color: #64748b;
+            background: #f8fafc; border-bottom: 2px solid #e2e8f0;
+        }
+        .dark .data-table th {
+            background: #0f172a; color: #94a3b8; border-color: #334155;
+        }
+        .data-table td {
+            padding: 14px 16px; font-size: 14px; color: #334155;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .dark .data-table td { color: #e2e8f0; border-color: #334155; }
+        .data-table tbody tr:hover { background: #f8fafc; }
+        .dark .data-table tbody tr:hover { background: #334155; }
+        
+        /* ═══════ FORMS ═══════ */
+        .form-input {
+            width: 100%; padding: 12px 16px;
+            border: 2px solid #e2e8f0; border-radius: 12px;
+            font-size: 14px; transition: all .2s ease;
+            background: white; color: #1e293b;
+        }
+        .dark .form-input {
+            background: #0f172a; border-color: #334155; color: #e2e8f0;
+        }
+        .form-input:focus {
+            outline: none; border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99,102,241,.1);
+        }
+        .form-label {
+            display: block; font-size: 13px; font-weight: 700;
+            color: #475569; margin-bottom: 6px;
+        }
+        .dark .form-label { color: #94a3b8; }
+        
+        /* ═══════ BADGES ═══════ */
+        .badge {
+            padding: 4px 12px; border-radius: 20px;
+            font-size: 12px; font-weight: 700;
+        }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-danger { background: #fee2e2; color: #991b1b; }
+        .badge-info { background: #dbeafe; color: #1e40af; }
+        .dark .badge-success { background: #14532d; color: #4ade80; }
+        .dark .badge-warning { background: #78350f; color: #fbbf24; }
+        .dark .badge-danger { background: #7f1d1d; color: #f87171; }
+        .dark .badge-info { background: #1e3a5f; color: #60a5fa; }
+        
+        /* ═══════ ALERTS ═══════ */
+        .alert { padding: 14px 18px; border-radius: 14px; margin-bottom: 16px; font-weight: 600; }
+        .alert-success { background: #dcfce7; border: 1px solid #86efac; color: #166534; }
+        .alert-error { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+        .alert-warning { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
+        .alert-info { background: #dbeafe; border: 1px solid #93c5fd; color: #1e40af; }
+        .dark .alert-success { background: #14532d; border-color: #22c55e; color: #4ade80; }
+        .dark .alert-error { background: #7f1d1d; border-color: #ef4444; color: #f87171; }
+        .dark .alert-warning { background: #78350f; border-color: #f59e0b; color: #fbbf24; }
+        .dark .alert-info { background: #1e3a5f; border-color: #3b82f6; color: #60a5fa; }
+        
+        /* ═══════ MODAL ═══════ */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,.5);
+            backdrop-filter: blur(4px); z-index: 50;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-content {
+            background: white; border-radius: 24px; width: 90%; max-width: 500px;
+            max-height: 90vh; overflow-y: auto;
+            box-shadow: 0 25px 60px rgba(0,0,0,.25);
+        }
+        .dark .modal-content { background: #1e293b; }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; }
+        .dark .modal-header { border-color: #334155; }
+        .modal-body { padding: 24px; }
+        
+        /* ═══════ SCROLLBAR ═══════ */
+        ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
-        .dark ::-webkit-scrollbar-track { background: #1e293b; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .fade-in { animation: fadeIn 0.3s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-        .table-hover tbody tr:hover { background-color: rgba(34,197,94,0.05); }
-        .dark .table-hover tbody tr:hover { background-color: rgba(34,197,94,0.1); }
-        /* Sidebar transition */
-        .sidebar-expanded { width: 18rem; }
-        .sidebar-collapsed { width: 5rem; }
-        .sidebar-collapsed .nav-text,
-        .sidebar-collapsed .nav-section,
-        .sidebar-collapsed .user-details,
-        .sidebar-collapsed .logo-text { display: none; }
-        .sidebar-collapsed .logo-icon { margin: 0 auto; }
+        .dark ::-webkit-scrollbar-track { background: #1e293b; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        
+        /* ═══════ RESPONSIVE ═══════ */
+        @media (max-width: 1023px) {
+            #sidebar { position: fixed; z-index: 40; transform: translateX(100%); transition: transform .3s; }
+            #sidebar.open { transform: translateX(0); }
+            #main { margin-right: 0 !important; }
+        }
+        
+        /* ═══════ DARK MODE TOGGLE ═══════ */
+        .dark-toggle {
+            width: 44px; height: 44px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all .2s ease;
+            background: #f1f5f9; color: #64748b;
+        }
+        .dark .dark-toggle { background: #334155; color: #fbbf24; }
+        .dark-toggle:hover { transform: scale(1.05); }
     </style>
-    
     {% block head %}{% endblock %}
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors duration-300"
-      x-data="{ 
-          sidebarOpen: localStorage.getItem('sidebarOpen') !== 'false',
-          mobileMenu: false,
-          dark: localStorage.getItem('darkMode') === 'true',
-          toggleSidebar() {
-              this.sidebarOpen = !this.sidebarOpen;
-              localStorage.setItem('sidebarOpen', this.sidebarOpen);
-          },
-          toggleDark() {
-              this.dark = !this.dark;
-              localStorage.setItem('darkMode', this.dark);
-              document.documentElement.classList.toggle('dark', this.dark);
-          }
-      }">
+<body x-data="{ mobileMenu: false }">
+
+<!-- Mobile Overlay -->
+<div x-show="mobileMenu" @click="mobileMenu=false" 
+     class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-30 lg:hidden" style="display:none"></div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- SIDEBAR -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<aside id="sidebar" :class="{'open': mobileMenu}" class="fixed inset-y-0 right-0 z-40 flex flex-col">
     
-    <!-- Mobile Menu Button -->
-    <div class="lg:hidden top-4 right-4 z-50 fixed">
-        <button @click="mobileMenu = !mobileMenu" 
-                class="bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 shadow-lg p-2 rounded-lg text-gray-700 dark:text-gray-200">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-            </svg>
-        </button>
+    <!-- Logo -->
+    <div class="p-5 border-b border-slate-100 dark:border-slate-700">
+        <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg" 
+                 style="background: linear-gradient(135deg, #6366f1, #8b5cf6)">
+                <svg width="24" height="24" fill="none" stroke="white" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z"/>
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-slate-800 dark:text-white font-black text-lg">سوبر ماركت العباسي</h1>
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium">نظام إدارة متكامل</p>
+            </div>
+        </div>
     </div>
     
-    <!-- Sidebar -->
-    <aside :class="{
-               'translate-x-full lg:translate-x-0': !mobileMenu,
-               'translate-x-0': mobileMenu,
-               'sidebar-expanded': sidebarOpen,
-               'sidebar-collapsed': !sidebarOpen
-           }"
-           class="right-0 z-40 fixed inset-y-0 bg-gradient-to-b from-primary-800 dark:from-gray-800 to-primary-900 dark:to-gray-900 shadow-2xl overflow-hidden transition-all lg:translate-x-0 duration-300 ease-in-out transform">
-        
-        <!-- Logo + Collapse Button -->
-        <div class="flex justify-between items-center p-4 border-primary-700/50 dark:border-gray-700/50 border-b">
+    <!-- User Card -->
+    {% if session.user_id %}
+    <div class="p-4">
+        <div class="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-2xl p-4">
             <div class="flex items-center gap-3">
-                <div class="flex flex-shrink-0 justify-center items-center bg-white/10 rounded-xl w-10 h-10 logo-icon">
-                    <span class="text-xl">🏪</span>
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold">
+                    {{ session.display_name[0] if session.display_name else '?' }}
                 </div>
-                <div class="logo-text">
-                    <h1 class="font-bold text-white text-lg leading-tight">سوبرماركت</h1>
-                    <p class="text-primary-300 dark:text-gray-400 text-xs">نظام إدارة المشتريات</p>
+                <div class="flex-1 min-w-0">
+                    <p class="font-bold text-slate-700 dark:text-slate-200 truncate">{{ session.display_name }}</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">{{ 'مدير' if session.role == 'manager' else 'مندوب' }}</p>
                 </div>
             </div>
-            <button @click="toggleSidebar()" class="hidden lg:flex hover:bg-white/10 p-1.5 rounded-lg text-white/60 hover:text-white transition-colors">
-                <svg class="w-5 h-5 transition-transform duration-300" :class="{'rotate-180': !sidebarOpen}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Navigation -->
+    <nav class="flex-1 overflow-y-auto py-2">
+        
+        <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
+            <div class="nav-icon gi-blue"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg></div>
+            <span>الرئيسية</span>
+        </a>
+        
+        <a href="{{ url_for('pos') }}" class="nav-item {% if request.endpoint == 'pos' %}active{% endif %}">
+            <div class="nav-icon gi-green"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg></div>
+            <span>نقطة البيع</span>
+        </a>
+        
+        <div class="section-label">المخزون</div>
+        
+        <a href="{{ url_for('products') }}" class="nav-item {% if request.endpoint == 'products' %}active{% endif %}">
+            <div class="nav-icon gi-purple"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></div>
+            <span>الأصناف</span>
+        </a>
+        
+        <a href="{{ url_for('categories') }}" class="nav-item {% if request.endpoint == 'categories' %}active{% endif %}">
+            <div class="nav-icon gi-orange"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg></div>
+            <span>الأقسام</span>
+        </a>
+        
+        <a href="{{ url_for('inventory') }}" class="nav-item {% if request.endpoint == 'inventory' %}active{% endif %}">
+            <div class="nav-icon gi-teal"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg></div>
+            <span>المخزون</span>
+        </a>
+        
+        <a href="/barcode-scanner" class="nav-item {% if request.endpoint == 'barcode_scanner' %}active{% endif %}">
+            <div class="nav-icon gi-cyan"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg></div>
+            <span>ماسح الباركود</span>
+        </a>
+        
+        <a href="{{ url_for('units') }}" class="nav-item {% if request.endpoint == 'units' %}active{% endif %}">
+            <div class="nav-icon gi-amber"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm12 0a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/></svg></div>
+            <span>الوحدات</span>
+        </a>
+        
+        <a href="{{ url_for('batches') }}" class="nav-item {% if request.endpoint == 'batches' %}active{% endif %}">
+            <div class="nav-icon gi-lime"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg></div>
+            <span>الدفعات</span>
+        </a>
+        
+        <div class="section-label">الموردين</div>
+        
+        <a href="{{ url_for('suppliers') }}" class="nav-item {% if request.endpoint == 'suppliers' %}active{% endif %}">
+            <div class="nav-icon gi-indigo"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg></div>
+            <span>الموردين</span>
+        </a>
+        
+        <a href="{{ url_for('supplier_products') }}" class="nav-item {% if request.endpoint == 'supplier_products' %}active{% endif %}">
+            <div class="nav-icon gi-violet"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></div>
+            <span>أصناف الموردين</span>
+        </a>
+        
+        <div class="section-label">المشتريات</div>
+        
+        <a href="{{ url_for('supplier_invoices') }}" class="nav-item {% if request.endpoint in ['supplier_invoices','new_supplier_invoice','view_supplier_invoice'] %}active{% endif %}">
+            <div class="nav-icon gi-emerald"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div>
+            <span>فواتير المورد</span>
+        </a>
+        
+        <a href="{{ url_for('agent_invoices') }}" class="nav-item {% if request.endpoint in ['agent_invoices','sort_invoice'] %}active{% endif %}">
+            <div class="nav-icon gi-sky"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg></div>
+            <span>فاتورة المندوب</span>
+        </a>
+        
+        <a href="{{ url_for('warehouse') }}" class="nav-item {% if request.endpoint == 'warehouse' %}active{% endif %}">
+            <div class="nav-icon gi-fuchsia"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg></div>
+            <span>استلام المخزن</span>
+        </a>
+        
+        <div class="section-label">الأسعار</div>
+        
+        <a href="{{ url_for('pricing') }}" class="nav-item {% if request.endpoint == 'pricing' %}active{% endif %}">
+            <div class="nav-icon gi-rose"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg></div>
+            <span>تسعيرات البيع</span>
+        </a>
+        
+        <a href="{{ url_for('supplier_prices') }}" class="nav-item {% if request.endpoint == 'supplier_prices' %}active{% endif %}">
+            <div class="nav-icon gi-pink"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <span>أسعار الموردين</span>
+        </a>
+        
+        <a href="{{ url_for('competitor_prices') }}" class="nav-item {% if request.endpoint == 'competitor_prices' %}active{% endif %}">
+            <div class="nav-icon gi-red"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg></div>
+            <span>أسعار المنافسين</span>
+        </a>
+        
+        <div class="section-label">الإدارة</div>
+        
+        <a href="{{ url_for('reports') }}" class="nav-item {% if request.endpoint == 'reports' %}active{% endif %}">
+            <div class="nav-icon gi-blue"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg></div>
+            <span>التقارير</span>
+        </a>
+        
+        {% if session.role == 'manager' %}
+        <a href="{{ url_for('users') }}" class="nav-item {% if request.endpoint == 'users' %}active{% endif %}">
+            <div class="nav-icon gi-green"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg></div>
+            <span>المستخدمين</span>
+        </a>
+        
+        <a href="{{ url_for('employees') }}" class="nav-item {% if request.endpoint == 'employees' %}active{% endif %}">
+            <div class="nav-icon gi-purple"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></div>
+            <span>الموظفين</span>
+        </a>
+        {% endif %}
+        
+        <a href="{{ url_for('change_password') }}" class="nav-item {% if request.endpoint == 'change_password' %}active{% endif %}">
+            <div class="nav-icon gi-orange"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg></div>
+            <span>كلمة المرور</span>
+        </a>
+        
+    </nav>
+    
+    <!-- Logout -->
+    <div class="p-4 border-t border-slate-100 dark:border-slate-700">
+        <a href="{{ url_for('logout') }}" class="nav-item hover:bg-red-50 dark:hover:bg-red-900/20">
+            <div class="nav-icon gi-logout"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg></div>
+            <span class="text-red-600 dark:text-red-400 font-bold">تسجيل الخروج</span>
+        </a>
+    </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- MAIN CONTENT -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="main">
+    
+    <!-- Header -->
+    <header class="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 sticky top-0 z-20">
+        <div class="flex items-center h-16 px-6 gap-4">
+            
+            <!-- Mobile Menu Button -->
+            <button @click="mobileMenu = !mobileMenu" class="lg:hidden p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500">
+                <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                 </svg>
             </button>
-        </div>
-        
-        <!-- User Info -->
-        {% if session.user_id %}
-        <div class="bg-white/10 dark:bg-white/5 mx-3 mt-3 p-3 rounded-xl">
+            
+            <!-- Page Title -->
+            <div class="flex-1">
+                <h1 class="text-slate-800 dark:text-white font-bold text-lg">{% block page_title %}{% endblock %}</h1>
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium">{% block page_subtitle %}{% endblock %}</p>
+            </div>
+            
+            <!-- Header Actions -->
             <div class="flex items-center gap-3">
-                <div class="flex flex-shrink-0 justify-center items-center bg-accent rounded-full w-9 h-9">
-                    <span class="font-bold text-white text-sm">{{ session.full_name[0] if session.full_name else 'م' }}</span>
-                </div>
-                <div class="min-w-0 user-details">
-                    <p class="font-medium text-white text-sm truncate">{{ session.full_name }}</p>
-                    <p class="text-primary-300 dark:text-gray-400 text-xs">
-                        {% if session.role == 'manager' %}مدير{% elif session.role == 'agent' %}مندوب{% else %}أمين مخزن{% endif %}
-                    </p>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-        
-        <!-- Navigation -->
-        <nav class="space-y-0.5 p-3 overflow-y-auto" style="height: calc(100vh - 200px);">
-            
-            <!-- الرئيسية -->
-            <a href="{{ url_for('dashboard') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'dashboard' %}bg-white/15 text-white{% endif %}"
-               title="الرئيسية">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-                </svg>
-                <span class="nav-text">الرئيسية</span>
-            </a>
-            
-            <!-- نقاط البيع -->
-            <a href="{{ url_for('pos') }}" 
-               class="flex items-center gap-3 px-3 py-3 rounded-xl text-white font-bold transition-all
-                      bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 shadow-lg
-                      {% if request.endpoint in ['pos','pos_login','pos_returns','pos_shift','pos_reports'] %}ring-2 ring-white{% endif %}"
-               title="نقاط البيع">
-                <svg class="flex-shrink-0 w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                </svg>
-                <span class="nav-text text-lg">نقاط البيع</span>
-                <span class="nav-text bg-white/20 px-2 py-0.5 rounded text-xs">POS</span>
-            </a>
-
-            <!-- ═══ الأصناف والمخزون ═══ -->
-            {% if session.role in ['manager','warehouse'] %}
-            <div class="pt-3 pb-1 nav-section">
-                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">📦 الأصناف والمخزون</p>
-            </div>
-
-            <a href="{{ url_for('products') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'products' %}bg-white/15 text-white{% endif %}"
-               title="الأصناف">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                </svg>
-                <span class="nav-text">الأصناف</span>
-            </a>
-
-            <a href="{{ url_for('categories') }}"
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'categories' %}bg-white/15 text-white{% endif %}"
-               title="الأقسام">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-                </svg>
-                <span class="nav-text">الأقسام</span>
-            </a>
-
-            <a href="{{ url_for('units') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'units' %}bg-white/15 text-white{% endif %}"
-               title="الوحدات">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/>
-                </svg>
-                <span class="nav-text">الوحدات</span>
-            </a>
-
-            <a href="{{ url_for('batches') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'batches' %}bg-white/15 text-white{% endif %}"
-               title="الدفعات والصلاحية">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                </svg>
-                <span class="nav-text">الدفعات والصلاحية</span>
-            </a>
-
-            <a href="{{ url_for('inventory') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'inventory' %}bg-white/15 text-white{% endif %}"
-               title="حركات المخزون">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
-                </svg>
-                <span class="nav-text">حركات المخزون</span>
-            </a>
-
-            <a href="{{ url_for('barcode_scanner') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'barcode_scanner' %}bg-white/15 text-white{% endif %}"
-               title="ماسح الباركود">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h2M4 12h2m14 0h2M6 20h2m-4-4h2m0-8h2m8 8h2M4 8h2"/>
-                </svg>
-                <span class="nav-text">ماسح الباركود</span>
-            </a>
-            {% endif %}
-
-            <!-- ═══ الموردين ═══ -->
-            {% if session.role == 'manager' %}
-            <div class="pt-3 pb-1 nav-section">
-                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">🏢 الموردين</p>
-            </div>
-
-            <a href="{{ url_for('suppliers') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'suppliers' %}bg-white/15 text-white{% endif %}"
-               title="الموردين">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                </svg>
-                <span class="nav-text">الموردين</span>
-            </a>
-
-            <a href="{{ url_for('supplier_products') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'supplier_products' %}bg-white/15 text-white{% endif %}"
-               title="أصناف الموردين">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-                </svg>
-                <span class="nav-text">أصناف الموردين</span>
-            </a>
-
-            <a href="{{ url_for('supplier_prices') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'supplier_prices' %}bg-white/15 text-white{% endif %}"
-               title="أسعار الموردين">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-                <span class="nav-text">أسعار الموردين</span>
-            </a>
-
-            <a href="{{ url_for('maps') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'maps' %}bg-white/15 text-white{% endif %}"
-               title="خريطة الموردين">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
-                </svg>
-                <span class="nav-text">خريطة الموردين</span>
-            </a>
-            {% endif %}
-
-            <!-- ═══ المشتريات ═══ -->
-            {% if session.role in ['manager', 'agent'] %}
-            <div class="pt-3 pb-1 nav-section">
-                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">🛒 المشتريات</p>
-            </div>
-
-            <a href="{{ url_for('supplier_invoices') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint in ['supplier_invoices', 'new_supplier_invoice', 'view_supplier_invoice'] %}bg-white/15 text-white{% endif %}"
-               title="فواتير الشراء">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                </svg>
-                <span class="nav-text">فواتير الشراء</span>
-            </a>
-
-            <a href="{{ url_for('agent_invoices') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint in ['agent_invoices', 'sort_invoice'] %}bg-white/15 text-white{% endif %}"
-               title="فرز المندوب">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
-                </svg>
-                <span class="nav-text">فرز المندوب</span>
-            </a>
-
-            <a href="{{ url_for('warehouse') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'warehouse' %}bg-white/15 text-white{% endif %}"
-               title="استلام المخزن">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
-                </svg>
-                <span class="nav-text">استلام المخزن</span>
-            </a>
-            {% endif %}
-
-            <!-- ═══ الأسعار والتقارير ═══ -->
-            {% if session.role == 'manager' %}
-            <div class="pt-3 pb-1 nav-section">
-                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">💰 الأسعار</p>
-            </div>
-
-            <a href="{{ url_for('pricing') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'pricing' %}bg-white/15 text-white{% endif %}"
-               title="تسعيرات البيع">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
-                </svg>
-                <span class="nav-text">تسعيرات البيع</span>
-            </a>
-
-            <a href="{{ url_for('competitor_prices') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'competitor_prices' %}bg-white/15 text-white{% endif %}"
-               title="أسعار المنافسين">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                </svg>
-                <span class="nav-text">أسعار المنافسين</span>
-            </a>
-
-            <div class="pt-3 pb-1 nav-section">
-                <p class="px-3 font-medium text-primary-300 dark:text-gray-500 text-xs uppercase tracking-wider">📊 التقارير والإدارة</p>
-            </div>
-
-            <a href="{{ url_for('reports') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'reports' %}bg-white/15 text-white{% endif %}"
-               title="التقارير">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                </svg>
-                <span class="nav-text">التقارير</span>
-            </a>
-
-            <a href="{{ url_for('users') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'users' %}bg-white/15 text-white{% endif %}"
-               title="المستخدمين">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
-                </svg>
-                <span class="nav-text">المستخدمين</span>
-            </a>
-
-            <a href="{{ url_for('employees') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'employees' %}bg-white/15 text-white{% endif %}"
-               title="الموظفين">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
-                </svg>
-                <span class="nav-text">الموظفين</span>
-            </a>
-
-            <a href="{{ url_for('settings') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'settings' %}bg-white/15 text-white{% endif %}"
-               title="الإعدادات">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                </svg>
-                <span class="nav-text">الإعدادات</span>
-            </a>
-            {% endif %}
-
-            <a href="{{ url_for('change_password') }}" 
-               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/80 hover:bg-white/10 hover:text-white transition-all
-                      {% if request.endpoint == 'change_password' %}bg-white/15 text-white{% endif %}"
-               title="تغيير كلمة المرور">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
-                </svg>
-                <span class="nav-text">تغيير كلمة المرور</span>
-            </a>
-            
-        </nav>
-        
-        <!-- Bottom Actions: Dark Mode + Logout -->
-        <div class="right-0 bottom-0 left-0 absolute space-y-1 p-3 border-primary-700/50 dark:border-gray-700/50 border-t">
-            <!-- Logout -->
-            <a href="{{ url_for('logout') }}" 
-               class="flex items-center gap-3 hover:bg-red-500/20 px-3 py-2.5 rounded-xl text-red-300 hover:text-red-200 transition-all"
-               title="تسجيل الخروج">
-                <svg class="flex-shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-                </svg>
-                <span class="nav-text">تسجيل الخروج</span>
-            </a>
-        </div>
-    </aside>
-    
-    <!-- Overlay for mobile -->
-    <div @click="mobileMenu = false" 
-         x-show="mobileMenu" 
-         x-transition:enter="transition-opacity ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition-opacity ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="lg:hidden z-30 fixed inset-0 bg-black/50"></div>
-    
-    <!-- Main Content -->
-    <main :class="sidebarOpen ? 'lg:mr-72' : 'lg:mr-20'" class="min-h-screen transition-all duration-300">
-        <!-- Header -->
-        <header class="top-0 z-20 sticky bg-white dark:bg-gray-800 shadow-sm transition-colors">
-            <div class="flex justify-between items-center px-6 py-4">
-                <div>
-                    <h1 class="font-bold text-gray-800 dark:text-gray-100 text-xl">{% block page_title %}{% endblock %}</h1>
-                    <p class="text-gray-500 dark:text-gray-400 text-sm">{% block page_subtitle %}{% endblock %}</p>
-                </div>
-                <div class="flex items-center gap-4">
-                    {% block header_actions %}{% endblock %}
-                    
-                    <!-- Notifications Bell -->
-                    <div x-data="{ 
-                        open: false, 
-                        notifications: [], 
-                        unreadCount: 0,
-                        async loadNotifications() {
-                            try {
-                                const res = await fetch('/api/notifications');
-                                this.notifications = await res.json();
-                                const countRes = await fetch('/api/notifications/unread-count');
-                                const data = await countRes.json();
-                                this.unreadCount = data.count;
-                            } catch(e) {}
-                        },
-                        async markAllRead() {
-                            await fetch('/api/notifications/read-all', {method: 'POST'});
-                            this.unreadCount = 0;
-                            this.notifications.forEach(n => n.is_read = 1);
-                        }
-                    }" 
-                    x-init="loadNotifications(); setInterval(() => loadNotifications(), 30000)"
-                    class="relative">
-                        <button @click="open = !open" class="relative p-2 rounded-xl bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                            <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-                            </svg>
-                            <span x-show="unreadCount > 0" 
-                                  x-text="unreadCount > 9 ? '9+' : unreadCount"
-                                  class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold"></span>
-                        </button>
-                        
-                        <!-- Dropdown -->
-                        <div x-show="open" @click.away="open = false" x-transition
-                             class="absolute left-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 z-50 overflow-hidden">
-                            <div class="flex justify-between items-center px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-                                <h3 class="font-bold text-gray-800 dark:text-white">الإشعارات</h3>
-                                <button @click="markAllRead()" class="text-sm text-primary-600 hover:text-primary-700">تحديد الكل كمقروء</button>
-                            </div>
-                            <div class="max-h-80 overflow-y-auto">
-                                <template x-if="notifications.length === 0">
-                                    <div class="p-6 text-center text-gray-500">
-                                        <svg class="w-12 h-12 mx-auto text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
-                                        </svg>
-                                        <p>لا توجد إشعارات</p>
-                                    </div>
-                                </template>
-                                <template x-for="n in notifications" :key="n.id">
-                                    <a :href="n.link || '#'" 
-                                       class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-50 dark:border-gray-700 transition-colors"
-                                       :class="{'bg-primary-50 dark:bg-primary-900/20': !n.is_read}">
-                                        <div class="flex gap-3">
-                                            <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
-                                                 :class="{
-                                                    'bg-blue-100 text-blue-600': n.type === 'info',
-                                                    'bg-yellow-100 text-yellow-600': n.type === 'warning',
-                                                    'bg-red-100 text-red-600': n.type === 'error',
-                                                    'bg-green-100 text-green-600': n.type === 'success'
-                                                 }">
-                                                <template x-if="n.type === 'info'">🔔</template>
-                                                <template x-if="n.type === 'warning'">⚠️</template>
-                                                <template x-if="n.type === 'error'">❌</template>
-                                                <template x-if="n.type === 'success'">✅</template>
-                                            </div>
-                                            <div class="flex-1 min-w-0">
-                                                <p class="font-medium text-gray-800 dark:text-white text-sm" x-text="n.title"></p>
-                                                <p class="text-gray-500 dark:text-gray-400 text-xs truncate" x-text="n.message"></p>
-                                            </div>
-                                        </div>
-                                    </a>
-                                </template>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Dark/Light Toggle -->
-                    <button @click="toggleDark()" 
-                            class="p-2 rounded-xl transition-colors"
-                            :class="dark ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-                            :title="dark ? 'الوضع النهاري' : 'الوضع الليلي'">
-                        <template x-if="dark">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-                            </svg>
-                        </template>
-                        <template x-if="!dark">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-                            </svg>
-                        </template>
-                    </button>
-                </div>
-            </div>
-        </header>
-        
-        <!-- Flash Messages -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        <div class="space-y-2 px-6 pt-4">
-            {% for category, message in messages %}
-            <div x-data="{ show: true }" 
-                 x-show="show" 
-                 x-transition
-                 class="flex items-center gap-3 p-4 rounded-xl fade-in
-                        {% if category == 'success' %}bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800{% endif %}
-                        {% if category == 'error' %}bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800{% endif %}
-                        {% if category == 'warning' %}bg-yellow-50 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800{% endif %}
-                        {% if category == 'info' %}bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800{% endif %}">
-                <span class="flex-1">{{ message }}</span>
-                <button @click="show = false" class="hover:opacity-70">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                {% block header_actions %}{% endblock %}
+                
+                <!-- Dark Mode Toggle -->
+                <button @click="darkMode = !darkMode; localStorage.setItem('darkMode', darkMode)" class="dark-toggle">
+                    <svg x-show="!darkMode" width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                    </svg>
+                    <svg x-show="darkMode" width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display:none">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
                     </svg>
                 </button>
+                
+                <!-- Notifications -->
+                <button class="relative p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 transition">
+                    <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                    </svg>
+                    <span class="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-800"></span>
+                </button>
             </div>
-            {% endfor %}
         </div>
-        {% endif %}
-        {% endwith %}
-        
-        <!-- Page Content -->
-        <div class="p-6">
-            {% block content %}{% endblock %}
-        </div>
+    </header>
+    
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="px-6 pt-4 space-y-3">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+    
+    <!-- Page Content -->
+    <main class="p-6">
+        {% block content %}{% endblock %}
     </main>
     
-    <div id="modal-container"></div>
+</div>
 
-    <!-- ═══ Toast Notifications ═══ -->
-    <div id="toast-container" class="fixed bottom-6 left-6 z-[9999] space-y-2 max-w-sm"></div>
+{% block scripts %}{% endblock %}
 
-    <script>
-    function showToast(message, type = 'info', duration = 4000) {
-        const container = document.getElementById('toast-container');
-        const id = 'toast-' + Date.now();
+<script>
+// Apply dark mode on page load
+if (localStorage.getItem('darkMode') === 'true') {
+    document.documentElement.classList.add('dark');
+}
+</script>
 
-        const colors = {
-            success: 'bg-green-600 text-white',
-            error:   'bg-red-600 text-white',
-            warning: 'bg-yellow-500 text-white',
-            info:    'bg-blue-600 text-white',
-        };
-        const icons = {
-            success: '✓',
-            error:   '✕',
-            warning: '⚠',
-            info:    'ℹ',
-        };
-
-        const div = document.createElement('div');
-        div.id = id;
-        div.className = `flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-medium
-                         ${colors[type] || colors.info}
-                         transform transition-all duration-300 translate-y-4 opacity-0`;
-        div.innerHTML = `
-            <span class="text-lg leading-none">${icons[type] || icons.info}</span>
-            <span class="flex-1">${message}</span>
-            <button onclick="document.getElementById('${id}').remove()"
-                    class="opacity-70 hover:opacity-100 text-lg leading-none ml-1">✕</button>
-        `;
-        container.appendChild(div);
-
-        // Animate in
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                div.classList.remove('translate-y-4', 'opacity-0');
-                div.classList.add('translate-y-0', 'opacity-100');
-            });
-        });
-
-        // Auto remove
-        setTimeout(() => {
-            div.classList.add('opacity-0', 'translate-y-4');
-            setTimeout(() => div.remove(), 300);
-        }, duration);
-    }
-
-    // اختصارات
-    const showSuccess = (msg) => showToast(msg, 'success');
-    const showError   = (msg) => showToast(msg, 'error');
-    const showWarning = (msg) => showToast(msg, 'warning');
-    const showInfo    = (msg) => showToast(msg, 'info');
-    </script>
-
-    {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -13,7 +13,7 @@
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
                 <p class="text-sm text-gray-500">رقم الفاتورة</p>
-                <p class="font-bold text-primary-600">{{ invoice.invoice_number }}</p>
+                <p class="font-bold text-indigo-600">{{ invoice.invoice_number }}</p>
             </div>
             <div>
                 <p class="text-sm text-gray-500">المورد</p>
@@ -51,7 +51,7 @@
                     </div>
                     <div class="text-left">
                         <p class="text-sm text-gray-500">الكمية</p>
-                        <p class="text-xl font-bold text-primary-600">{{ item.quantity }}</p>
+                        <p class="text-xl font-bold text-indigo-600">{{ item.quantity }}</p>
                         <p class="text-xs text-gray-500">× {{ item.pack_size or 1 }} = {{ (item.quantity * (item.pack_size or 1))|int }} قطعة</p>
                     </div>
                 </div>
@@ -65,7 +65,7 @@
                     <div class="flex items-center gap-4 p-3 bg-gray-50 rounded-xl">
                         <span class="flex-1 font-medium text-gray-800">{{ allowed.product_name }}</span>
                         <input type="number" min="0" value="0"
-                               class="w-24 px-3 py-2 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-primary-500"
+                               class="w-24 px-3 py-2 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-indigo-500"
                                data-item="{{ item.id }}" data-product="{{ allowed.allowed_product_id }}">
                     </div>
                     {% endfor %}
@@ -74,7 +74,7 @@
                 <div class="flex items-center gap-4 p-3 bg-gray-50 rounded-xl">
                     <span class="flex-1 font-medium text-gray-800">{{ item.product_name }}</span>
                     <input type="number" min="0" value="{{ (item.quantity * (item.pack_size or 1))|int }}"
-                           class="w-24 px-3 py-2 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-primary-500"
+                           class="w-24 px-3 py-2 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-indigo-500"
                            data-item="{{ item.id }}" data-product="{{ item.product_id }}">
                 </div>
                 <p class="text-xs text-gray-500 mt-2">
@@ -89,7 +89,7 @@
     <!-- Actions -->
     <div class="flex gap-4">
         <button onclick="saveSorting()"
-                class="flex-1 py-3 px-6 bg-primary-600 text-white font-medium rounded-xl hover:bg-primary-700 transition-colors">
+                class="flex-1 py-3 px-6 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition-colors">
             💾 حفظ الفرز
         </button>
         <a href="{{ url_for('agent_invoices') }}"
@@ -138,3 +138,4 @@ async function saveSorting() {
 }
 </script>
 {% endblock %}
+

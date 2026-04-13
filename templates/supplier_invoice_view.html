@@ -112,7 +112,7 @@
                 <tfoot class="bg-gray-50 font-bold">
                     <tr>
                         <td colspan="5" class="px-4 py-3 text-left">الإجمالي</td>
-                        <td class="px-4 py-3 text-center text-lg text-primary-700">{{ '{:,.0f}'.format(invoice.total_amount) }} ريال</td>
+                        <td class="px-4 py-3 text-center text-lg text-indigo-700">{{ '{:,.0f}'.format(invoice.total_amount) }} ريال</td>
                         <td></td>
                     </tr>
                 </tfoot>
@@ -130,7 +130,7 @@
                 <input type="number" id="paymentAmount" step="1" min="1" 
                        max="{{ invoice.total_amount - invoice.paid_amount }}"
                        value="{{ invoice.total_amount - invoice.paid_amount }}"
-                       class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                       class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
             </div>
             <button type="submit" class="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700">
                 تسجيل الدفعة
@@ -189,3 +189,4 @@ async function recordPayment(e) {
 }
 </style>
 {% endblock %}
+

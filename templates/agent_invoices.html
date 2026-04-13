@@ -26,7 +26,7 @@
             {% for invoice in pending %}
             <div class="bg-white rounded-xl p-4 shadow-sm">
                 <div class="flex items-center justify-between mb-3">
-                    <span class="font-bold text-primary-600">{{ invoice.invoice_number }}</span>
+                    <span class="font-bold text-indigo-600">{{ invoice.invoice_number }}</span>
                     <span class="text-sm text-gray-500">{{ invoice.invoice_date }}</span>
                 </div>
                 <p class="font-medium text-gray-800 mb-3">{{ invoice.supplier_name }}</p>
@@ -60,7 +60,7 @@
                 <tbody class="divide-y divide-gray-100">
                     {% for invoice in invoices %}
                     <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-4 font-bold text-primary-600">{{ invoice.invoice_number }}</td>
+                        <td class="px-6 py-4 font-bold text-indigo-600">{{ invoice.invoice_number }}</td>
                         <td class="px-6 py-4 font-medium text-gray-800">{{ invoice.supplier_name }}</td>
                         <td class="px-6 py-4 text-gray-600">{{ invoice.agent_name }}</td>
                         <td class="px-6 py-4">
@@ -119,3 +119,4 @@ async function submitInvoice(id) {
 }
 </script>
 {% endblock %}
+

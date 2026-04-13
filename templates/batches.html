@@ -7,7 +7,7 @@
 
 {% block header_actions %}
 <button onclick="openAddBatchModal()" 
-        class="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+        class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
     </svg>
@@ -73,7 +73,7 @@
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
         <div class="flex flex-wrap gap-2">
             <button onclick="filterBatches('all')" id="filter-all"
-                    class="px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white">
+                    class="px-4 py-2 rounded-xl font-medium transition-all bg-indigo-600 text-white">
                 الكل
             </button>
             <button onclick="filterBatches('expired')" id="filter-expired"
@@ -198,7 +198,7 @@
                                 <span class="text-3xl">📦</span>
                             </div>
                             <p>لا توجد دفعات مسجلة</p>
-                            <button onclick="openAddBatchModal()" class="mt-4 text-primary-600 hover:text-primary-700 font-medium">
+                            <button onclick="openAddBatchModal()" class="mt-4 text-indigo-600 hover:text-indigo-700 font-medium">
                                 + إضافة دفعة جديدة
                             </button>
                         </td>
@@ -213,7 +213,7 @@
 <!-- Add/Edit Batch Modal -->
 <div id="batchModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-        <div class="p-6 border-b border-gray-100 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-t-2xl">
+        <div class="p-6 border-b border-gray-100 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white rounded-t-2xl">
             <div class="flex items-center justify-between">
                 <h3 id="batchModalTitle" class="text-xl font-bold">إضافة دفعة جديدة</h3>
                 <button onclick="closeBatchModal()" class="p-2 hover:bg-white/20 rounded-xl transition-colors">✕</button>
@@ -226,7 +226,7 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">الصنف *</label>
                 <select id="batchProductId" required
-                        class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                     <option value="">-- اختر الصنف --</option>
                     {% for product in products %}
                     <option value="{{ product.id }}">{{ product.name }}</option>
@@ -238,12 +238,12 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">رقم الدفعة</label>
                     <input type="text" id="batchNumber" placeholder="تلقائي إذا فارغ"
-                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">الكمية *</label>
                     <input type="number" id="batchQuantity" required min="0" step="0.01"
-                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                 </div>
             </div>
             
@@ -251,12 +251,12 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">تاريخ الإنتاج</label>
                     <input type="date" id="batchProductionDate"
-                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">تاريخ الانتهاء *</label>
                     <input type="date" id="batchExpiryDate" required
-                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                 </div>
             </div>
             
@@ -264,19 +264,19 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">سعر الشراء</label>
                     <input type="number" id="batchPurchasePrice" min="0" step="0.01"
-                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">الموقع</label>
                     <input type="text" id="batchLocation" placeholder="مثال: رف A3"
-                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500">
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                 </div>
             </div>
             
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">ملاحظات</label>
                 <textarea id="batchNotes" rows="2"
-                          class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500"></textarea>
+                          class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500"></textarea>
             </div>
         </form>
         
@@ -284,7 +284,7 @@
             <button onclick="closeBatchModal()" class="px-5 py-2.5 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200">
                 إلغاء
             </button>
-            <button onclick="saveBatch()" class="px-5 py-2.5 text-white bg-primary-600 rounded-xl hover:bg-primary-700">
+            <button onclick="saveBatch()" class="px-5 py-2.5 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700">
                 💾 حفظ
             </button>
         </div>
@@ -301,7 +301,7 @@ function filterBatches(status) {
     document.querySelectorAll('[id^="filter-"]').forEach(btn => {
         btn.className = 'px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700';
     });
-    document.getElementById('filter-' + status).className = 'px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white';
+    document.getElementById('filter-' + status).className = 'px-4 py-2 rounded-xl font-medium transition-all bg-indigo-600 text-white';
     
     // Filter rows
     document.querySelectorAll('.batch-row').forEach(row => {
@@ -426,3 +426,4 @@ async function markAsReturned(id) {
 }
 </script>
 {% endblock %}
+

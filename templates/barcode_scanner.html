@@ -15,12 +15,12 @@
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div class="flex flex-col md:flex-row gap-4 items-center justify-between mb-6">
             <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <span class="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center">📷</span>
+                <span class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">📷</span>
                 اختر طريقة المسح
             </h2>
             <div class="flex gap-2">
                 <button onclick="setMode('manual')" id="btnManual"
-                        class="px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white">
+                        class="px-4 py-2 rounded-xl font-medium transition-all bg-indigo-600 text-white">
                     ⌨️ إدخال يدوي / جهاز باركود
                 </button>
                 <button onclick="setMode('camera')" id="btnCamera"
@@ -34,12 +34,12 @@
         <div id="manualMode" class="space-y-4">
             <div class="relative">
                 <input type="text" id="barcodeInput" 
-                       class="w-full px-6 py-4 text-2xl text-center border-2 border-primary-300 rounded-2xl focus:ring-4 focus:ring-primary-100 focus:border-primary-500 font-mono tracking-widest"
+                       class="w-full px-6 py-4 text-2xl text-center border-2 border-indigo-300 rounded-2xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 font-mono tracking-widest"
                        placeholder="امسح الباركود أو أدخله يدوياً"
                        autofocus
                        onkeypress="if(event.key === 'Enter') searchBarcode()">
                 <button onclick="searchBarcode()" 
-                        class="absolute left-3 top-1/2 -translate-y-1/2 px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+                        class="absolute left-3 top-1/2 -translate-y-1/2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
                     🔍 بحث
                 </button>
             </div>
@@ -50,7 +50,7 @@
         
         <!-- Camera Mode -->
         <div id="cameraMode" class="hidden space-y-4">
-            <div id="reader" class="w-full max-w-md mx-auto rounded-2xl overflow-hidden border-4 border-primary-200"></div>
+            <div id="reader" class="w-full max-w-md mx-auto rounded-2xl overflow-hidden border-4 border-indigo-200"></div>
             <div class="flex justify-center gap-2">
                 <button onclick="startCamera()" id="startCameraBtn"
                         class="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-medium">
@@ -94,7 +94,7 @@
             </div>
             <div class="p-6">
                 <div class="flex items-start gap-6">
-                    <div class="w-20 h-20 bg-gradient-to-br from-primary-100 to-primary-200 rounded-2xl flex items-center justify-center text-4xl">
+                    <div class="w-20 h-20 bg-gradient-to-br from-indigo-100 to-indigo-200 rounded-2xl flex items-center justify-center text-4xl">
                         📦
                     </div>
                     <div class="flex-1 space-y-3">
@@ -249,11 +249,11 @@ function setMode(mode) {
     currentMode = mode;
     
     document.getElementById('btnManual').className = mode === 'manual' 
-        ? 'px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white'
+        ? 'px-4 py-2 rounded-xl font-medium transition-all bg-indigo-600 text-white'
         : 'px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
     
     document.getElementById('btnCamera').className = mode === 'camera'
-        ? 'px-4 py-2 rounded-xl font-medium transition-all bg-primary-600 text-white'
+        ? 'px-4 py-2 rounded-xl font-medium transition-all bg-indigo-600 text-white'
         : 'px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
     
     document.getElementById('manualMode').classList.toggle('hidden', mode !== 'manual');
@@ -266,13 +266,16 @@ function setMode(mode) {
 }
 
 // Start camera scanning
+let scanning = true;
+
 function startCamera() {
+    scanning = true;
     html5QrCode = new Html5Qrcode("reader");
     
     html5QrCode.start(
         { facingMode: "environment" },
         {
-            fps: 10,
+            fps: 5,
             qrbox: { width: 250, height: 150 },
             aspectRatio: 1.5
         },
@@ -298,18 +301,29 @@ function stopCamera() {
 
 // On successful scan
 function onScanSuccess(decodedText, decodedResult) {
-    // Vibrate if supported
+    if (!scanning) return;
+    scanning = false; // Block immediately
+    
+    // Vibrate
     if (navigator.vibrate) navigator.vibrate(200);
     
-    // Play beep sound
+    // Beep
     playBeep();
     
-    // Process barcode
+    // Stop camera immediately
+    if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().then(() => {
+            document.getElementById('startCameraBtn').classList.remove('hidden');
+            document.getElementById('stopCameraBtn').classList.add('hidden');
+        }).catch(() => {});
+    }
+    
+    // Show result
     processBarcode(decodedText);
 }
 
 function onScanFailure(error) {
-    // Ignore scan failures
+    // Ignore
 }
 
 // Search barcode (manual input)
@@ -357,12 +371,42 @@ function showProductFound(product) {
     document.getElementById('productFound').classList.remove('hidden');
     document.getElementById('productNotFound').classList.add('hidden');
     
+    const price = product.sell_price || product.price || 0;
+    const unit = product.unit || '';
+    
     document.getElementById('productName').textContent = product.name;
-    document.getElementById('productBarcode').textContent = product.barcode || '-';
+    document.getElementById('productBarcode').textContent = product.barcode || lastScannedBarcode;
     document.getElementById('productCategory').textContent = product.category_name || 'غير مصنف';
-    document.getElementById('productStock').textContent = product.current_stock + ' ' + (product.unit || '');
-    document.getElementById('productPrice').textContent = (product.price || 0) + ' ريال';
+    document.getElementById('productStock').textContent = (product.current_stock || 0) + ' ' + unit;
+    document.getElementById('productPrice').textContent = Number(price).toLocaleString() + ' ريال / ' + unit;
     document.getElementById('editProductBtn').href = '/products?edit=' + product.id;
+    
+    // Show quick popup
+    showQuickResult(product.name, price, unit);
+}
+
+// Quick popup notification
+function showQuickResult(name, price, unit) {
+    // Remove old popup
+    const old = document.getElementById('quickPopup');
+    if (old) old.remove();
+    
+    const popup = document.createElement('div');
+    popup.id = 'quickPopup';
+    popup.className = 'fixed top-4 left-4 right-4 z-50 bg-green-600 text-white rounded-2xl shadow-2xl p-6 text-center transform transition-all duration-300';
+    popup.innerHTML = `
+        <p class="text-lg font-bold mb-2">${name}</p>
+        <p class="text-4xl font-black mb-1">${Number(price).toLocaleString()} <span class="text-lg">ريال</span></p>
+        <p class="text-green-200">${unit}</p>
+    `;
+    document.body.appendChild(popup);
+    
+    // Auto remove after 3 seconds
+    setTimeout(() => {
+        popup.style.opacity = '0';
+        popup.style.transform = 'translateY(-20px)';
+        setTimeout(() => popup.remove(), 300);
+    }, 3000);
 }
 
 // Show product not found
@@ -393,7 +437,7 @@ function updateHistoryDisplay() {
     }
     
     container.innerHTML = scanHistory.map((item, i) => `
-        <div class="flex items-center justify-between px-4 py-2 rounded-xl ${i === 0 ? 'bg-primary-50 border border-primary-200' : 'bg-gray-50'} hover:bg-gray-100 transition-colors cursor-pointer"
+        <div class="flex items-center justify-between px-4 py-2 rounded-xl ${i === 0 ? 'bg-indigo-50 border border-indigo-200' : 'bg-gray-50'} hover:bg-gray-100 transition-colors cursor-pointer"
              onclick="processBarcode('${item.barcode}')">
             <div class="flex items-center gap-3">
                 <span class="text-gray-400">${i + 1}</span>
@@ -500,3 +544,4 @@ document.addEventListener('keydown', (e) => {
 });
 </script>
 {% endblock %}
+

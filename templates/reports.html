@@ -137,13 +137,13 @@ async function loadPurchasesReport() {
             html += `<tr class="hover:bg-gray-50">
                 <td class="px-6 py-4 font-medium text-gray-800">${row.supplier_name}</td>
                 <td class="px-6 py-4 text-gray-600">${row.invoice_count}</td>
-                <td class="px-6 py-4 font-bold text-primary-600">${Number(row.total || 0).toLocaleString()}</td>
+                <td class="px-6 py-4 font-bold text-indigo-600">${Number(row.total || 0).toLocaleString()}</td>
             </tr>`;
         });
         
         html += `<tr class="bg-gray-100 font-bold">
             <td class="px-6 py-4" colspan="2">الإجمالي</td>
-            <td class="px-6 py-4 text-primary-600">${total.toLocaleString()}</td>
+            <td class="px-6 py-4 text-indigo-600">${total.toLocaleString()}</td>
         </tr>`;
         html += '</tbody></table></div>';
         
@@ -198,3 +198,4 @@ async function loadDebtsReport() {
 }
 </script>
 {% endblock %}
+

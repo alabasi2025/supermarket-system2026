@@ -147,7 +147,7 @@ def init_db():
             id SERIAL PRIMARY KEY ,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            display_name TEXT NOT NULL,
+            full_name TEXT NOT NULL,
             role TEXT NOT NULL CHECK(role IN ('manager', 'agent', 'warehouse')),
             is_active INTEGER DEFAULT 1,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -717,7 +717,7 @@ def init_db():
     cursor = db.execute('SELECT COUNT(*) as count FROM users')
     if cursor.fetchone()['count'] == 0:
         db.execute('''
-            INSERT INTO users (username, password_hash, display_name, role)
+            INSERT INTO users (username, password, full_name, role)
             VALUES (%s, %s, %s, %s)
         ''', ('admin', generate_password_hash('admin'), 'مدير النظام', 'manager'))
     
@@ -833,7 +833,7 @@ def csrf_protect():
         return None
     
     # استثناء بعض الصفحات من CSRF
-    csrf_exempt = ['/login', '/api/pos/verify-pin', '/api/pos/invoice', '/api/pos/return', '/force-change-password']
+    csrf_exempt = ['/api/pos/verify-pin', '/api/pos/invoice', '/api/pos/return', '/force-change-password']
     if any(request.path.startswith(path) for path in csrf_exempt):
         return None
 
@@ -867,15 +867,15 @@ def login():
         
         db = get_db()
         user = db.execute(
-            'SELECT * FROM users WHERE username = %s AND is_active = TRUE',
+            'SELECT * FROM users WHERE username = %s AND is_active = 1',
             (username,)
         ).fetchone()
         
-        if user and check_password_hash(user['password_hash'], password):
+        if user and check_password_hash(user['password'], password):
             session.clear()
             session['user_id'] = user['id']
             session['username'] = user['username']
-            session['display_name'] = user['display_name']
+            session['full_name'] = user['full_name']
             session['role'] = user['role']
             get_csrf_token()
             
@@ -884,7 +884,7 @@ def login():
                 session['must_change_password'] = True
                 return redirect(url_for('force_change_password'))
             
-            flash(f'مرحباً {user["display_name"]}', 'success')
+            flash(f'مرحباً {user["full_name"]}', 'success')
             return redirect(url_for('dashboard'))
         else:
             flash('اسم المستخدم أو كلمة المرور غير صحيحة', 'error')
@@ -935,7 +935,7 @@ def logout():
 def users():
     db = get_db()
     users_list = db.execute('''
-        SELECT * FROM users ORDER BY role, display_name
+        SELECT * FROM users ORDER BY role, full_name
     ''').fetchall()
     return render_template('users.html', users=users_list)
 
@@ -951,12 +951,12 @@ def api_users_create():
         return jsonify({'success': False, 'message': 'اسم المستخدم موجود مسبقاً'})
     
     db.execute('''
-        INSERT INTO users (username, password_hash, display_name, role)
+        INSERT INTO users (username, password, full_name, role)
         VALUES (%s, %s, %s, %s)
     ''', (
         data['username'],
-        generate_password_hash(data['password_hash']),
-        data['display_name'],
+        generate_password_hash(data['password']),
+        data['full_name'],
         data['role']
     ))
     db.commit()
@@ -976,9 +976,9 @@ def api_user(id):
             return jsonify({'success': False, 'message': 'اسم المستخدم موجود مسبقاً'})
         
         db.execute('''
-            UPDATE users SET username=%s, display_name=%s, role=%s
+            UPDATE users SET username=%s, full_name=%s, role=%s
             WHERE id=%s
-        ''', (data['username'], data['display_name'], data['role'], id))
+        ''', (data['username'], data['full_name'], data['role'], id))
         db.commit()
         return jsonify({'success': True, 'message': 'تم تحديث المستخدم'})
     
@@ -987,7 +987,7 @@ def api_user(id):
         if id == session.get('user_id'):
             return jsonify({'success': False, 'message': 'لا يمكنك حذف نفسك'})
         
-        db.execute('UPDATE users SET is_active=FALSE WHERE id=%s', (id,))
+        db.execute('UPDATE users SET is_active=0 WHERE id=%s', (id,))
         db.commit()
         return jsonify({'success': True, 'message': 'تم تعطيل المستخدم'})
 
@@ -998,7 +998,7 @@ def api_user_reset_password(id):
     data = request.json
     
     db.execute('UPDATE users SET password=%s WHERE id=%s', 
-               (generate_password_hash(data['password_hash']), id))
+               (generate_password_hash(data['password']), id))
     db.commit()
     return jsonify({'success': True, 'message': 'تم تغيير كلمة المرور'})
 
@@ -1011,7 +1011,7 @@ def change_password():
         
         # التحقق من كلمة المرور الحالية
         user = db.execute('SELECT password FROM users WHERE id = %s', (session['user_id'],)).fetchone()
-        if not check_password_hash(user['password_hash'], data['current_password']):
+        if not check_password_hash(user['password'], data['current_password']):
             return jsonify({'success': False, 'message': 'كلمة المرور الحالية غير صحيحة'})
         
         # تحديث كلمة المرور
@@ -1029,16 +1029,16 @@ def dashboard():
     
     # إحصائيات سريعة
     stats = {
-        'suppliers': db.execute('SELECT COUNT(*) as count FROM suppliers WHERE is_active=TRUE').fetchone()['count'],
-        'products': db.execute('SELECT COUNT(*) as count FROM products WHERE is_active=TRUE').fetchone()['count'],
-        'low_stock': db.execute('SELECT COUNT(*) as count FROM products WHERE current_stock <= min_stock AND is_active=TRUE').fetchone()['count'],
+        'suppliers': db.execute('SELECT COUNT(*) as count FROM suppliers WHERE is_active=1').fetchone()['count'],
+        'products': db.execute('SELECT COUNT(*) as count FROM products WHERE is_active=1').fetchone()['count'],
+        'low_stock': db.execute('SELECT COUNT(*) as count FROM products WHERE current_stock <= min_stock AND is_active=1').fetchone()['count'],
         'pending_invoices': db.execute("SELECT COUNT(*) as count FROM supplier_invoices WHERE status IN ('pending', 'sorting')").fetchone()['count'],
         'pending_receive': db.execute("SELECT COUNT(*) as count FROM agent_invoices WHERE status = 'submitted'").fetchone()['count'],
     }
     
     # آخر الفواتير
     recent_invoices = db.execute('''
-        SELECT si.*, s.name as supplier_name, u.display_name as created_by_name
+        SELECT si.*, s.name as supplier_name, u.full_name as created_by_name
         FROM supplier_invoices si
         JOIN suppliers s ON s.id = si.supplier_id
         JOIN users u ON u.id = si.created_by
@@ -1050,7 +1050,7 @@ def dashboard():
         SELECT p.*, c.name as category_name
         FROM products p
         LEFT JOIN categories c ON c.id = p.category_id
-        WHERE p.current_stock <= p.min_stock AND p.is_active = TRUE
+        WHERE p.current_stock <= p.min_stock AND p.is_active = 1
         ORDER BY (p.current_stock - p.min_stock) ASC
         LIMIT 10
     ''').fetchall()
@@ -1075,7 +1075,7 @@ def suppliers():
         FROM suppliers s
         LEFT JOIN supplier_products sp ON sp.supplier_id = s.id
         LEFT JOIN supplier_invoices si ON si.supplier_id = s.id
-        WHERE s.is_active = TRUE
+        WHERE s.is_active = 1
         GROUP BY s.id
         ORDER BY s.name
     ''').fetchall()
@@ -1087,27 +1087,27 @@ def maps():
     db = get_db()
     # الموردين
     suppliers_list = db.execute('''
-        SELECT * FROM suppliers WHERE is_active = TRUE ORDER BY name
+        SELECT * FROM suppliers WHERE is_active = 1 ORDER BY name
     ''').fetchall()
     
     # المنافسين
     competitors_list = db.execute('''
-        SELECT * FROM competitors WHERE is_active = TRUE ORDER BY name
+        SELECT * FROM competitors WHERE is_active = 1 ORDER BY name
     ''').fetchall() if table_exists(db, 'competitors') else []
     
     # المخازن
     warehouses_list = db.execute('''
-        SELECT * FROM warehouses WHERE is_active = TRUE ORDER BY name
+        SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name
     ''').fetchall() if table_exists(db, 'warehouses') else []
     
     # الفروع/المتاجر
     stores_list = db.execute('''
-        SELECT * FROM stores WHERE is_active = TRUE ORDER BY name
+        SELECT * FROM stores WHERE is_active = 1 ORDER BY name
     ''').fetchall() if table_exists(db, 'stores') else []
     
     # الموظفين
     employees_list = db.execute('''
-        SELECT * FROM employees WHERE is_active = TRUE ORDER BY name
+        SELECT * FROM employees WHERE is_active = 1 ORDER BY name
     ''').fetchall() if table_exists(db, 'employees') else []
     
     return render_template('suppliers_map.html', 
@@ -1143,7 +1143,7 @@ def api_suppliers():
         db.commit()
         return jsonify({'success': True, 'id': supplier_id, 'message': 'تم إضافة المورد'})
     
-    suppliers_list = db.execute('SELECT * FROM suppliers WHERE is_active=TRUE ORDER BY name').fetchall()
+    suppliers_list = db.execute('SELECT * FROM suppliers WHERE is_active=1 ORDER BY name').fetchall()
     return jsonify([dict(s) for s in suppliers_list])
 
 @app.route('/api/suppliers/<int:id>', methods=['GET', 'PUT', 'DELETE'])
@@ -1159,7 +1159,7 @@ def api_supplier(id):
         result['phones'] = [dict(p) for p in db.execute(
             'SELECT * FROM supplier_phones WHERE supplier_id=%s ORDER BY is_primary DESC', (id,)).fetchall()]
         result['accounts'] = [dict(a) for a in db.execute(
-            'SELECT * FROM supplier_accounts WHERE supplier_id=%s AND is_active=TRUE', (id,)).fetchall()]
+            'SELECT * FROM supplier_accounts WHERE supplier_id=%s AND is_active=1', (id,)).fetchall()]
         return jsonify(result)
     
     if request.method == 'PUT':
@@ -1185,7 +1185,7 @@ def api_supplier(id):
         return jsonify({'success': True, 'message': 'تم تحديث المورد'})
     
     elif request.method == 'DELETE':
-        db.execute('UPDATE suppliers SET is_active=FALSE WHERE id=%s', (id,))
+        db.execute('UPDATE suppliers SET is_active=0 WHERE id=%s', (id,))
         db.commit()
         return jsonify({'success': True, 'message': 'تم حذف المورد'})
 
@@ -1208,7 +1208,7 @@ def api_competitors():
         db.commit()
         return jsonify({'success': True, 'message': 'تم إضافة المنافس'})
     
-    competitors_list = db.execute('SELECT * FROM competitors WHERE is_active=TRUE ORDER BY name').fetchall()
+    competitors_list = db.execute('SELECT * FROM competitors WHERE is_active=1 ORDER BY name').fetchall()
     return jsonify([dict(c) for c in competitors_list])
 
 @app.route('/api/competitors/<int:id>', methods=['PUT', 'DELETE'])
@@ -1227,7 +1227,7 @@ def api_competitor(id):
         return jsonify({'success': True, 'message': 'تم تحديث المنافس'})
     
     elif request.method == 'DELETE':
-        db.execute('UPDATE competitors SET is_active=FALSE WHERE id=%s', (id,))
+        db.execute('UPDATE competitors SET is_active=0 WHERE id=%s', (id,))
         db.commit()
         return jsonify({'success': True, 'message': 'تم حذف المنافس'})
 
@@ -1249,7 +1249,7 @@ def api_warehouses():
         db.commit()
         return jsonify({'success': True, 'message': 'تم إضافة المخزن'})
     
-    warehouses_list = db.execute('SELECT * FROM warehouses WHERE is_active=TRUE ORDER BY name').fetchall()
+    warehouses_list = db.execute('SELECT * FROM warehouses WHERE is_active=1 ORDER BY name').fetchall()
     return jsonify([dict(w) for w in warehouses_list])
 
 @app.route('/api/warehouses/<int:id>', methods=['PUT', 'DELETE'])
@@ -1267,7 +1267,7 @@ def api_warehouse(id):
         return jsonify({'success': True, 'message': 'تم تحديث المخزن'})
     
     elif request.method == 'DELETE':
-        db.execute('UPDATE warehouses SET is_active=FALSE WHERE id=%s', (id,))
+        db.execute('UPDATE warehouses SET is_active=0 WHERE id=%s', (id,))
         db.commit()
         return jsonify({'success': True, 'message': 'تم حذف المخزن'})
 
@@ -1289,7 +1289,7 @@ def api_stores():
         db.commit()
         return jsonify({'success': True, 'message': 'تم إضافة الفرع'})
     
-    stores_list = db.execute('SELECT * FROM stores WHERE is_active=TRUE ORDER BY name').fetchall()
+    stores_list = db.execute('SELECT * FROM stores WHERE is_active=1 ORDER BY name').fetchall()
     return jsonify([dict(s) for s in stores_list])
 
 @app.route('/api/stores/<int:id>', methods=['PUT', 'DELETE'])
@@ -1307,7 +1307,7 @@ def api_store(id):
         return jsonify({'success': True, 'message': 'تم تحديث الفرع'})
     
     elif request.method == 'DELETE':
-        db.execute('UPDATE stores SET is_active=FALSE WHERE id=%s', (id,))
+        db.execute('UPDATE stores SET is_active=0 WHERE id=%s', (id,))
         db.commit()
         return jsonify({'success': True, 'message': 'تم حذف الفرع'})
 
@@ -1320,7 +1320,7 @@ def api_store(id):
 def employees():
     db = get_db()
     employees_list = db.execute('''
-        SELECT * FROM employees WHERE is_active = TRUE ORDER BY name
+        SELECT * FROM employees WHERE is_active = 1 ORDER BY name
     ''').fetchall()
     return render_template('employees.html', employees=employees_list)
 
@@ -1339,7 +1339,7 @@ def api_employees():
         db.commit()
         return jsonify({'success': True, 'message': 'تم إضافة الموظف'})
     
-    employees_list = db.execute('SELECT * FROM employees WHERE is_active=TRUE ORDER BY name').fetchall()
+    employees_list = db.execute('SELECT * FROM employees WHERE is_active=1 ORDER BY name').fetchall()
     return jsonify([dict(e) for e in employees_list])
 
 @app.route('/api/employees/<int:id>', methods=['PUT', 'DELETE'])
@@ -1358,7 +1358,7 @@ def api_employee(id):
         return jsonify({'success': True, 'message': 'تم تحديث الموظف'})
     
     elif request.method == 'DELETE':
-        db.execute('UPDATE employees SET is_active=FALSE WHERE id=%s', (id,))
+        db.execute('UPDATE employees SET is_active=0 WHERE id=%s', (id,))
         db.commit()
         return jsonify({'success': True, 'message': 'تم حذف الموظف'})
 
@@ -1378,7 +1378,7 @@ def create_notification(user_id, title, message, notif_type='info', link=None):
 def notify_all_managers(title, message, notif_type='info', link=None):
     """إرسال إشعار لجميع المديرين"""
     db = get_db()
-    managers = db.execute("SELECT id FROM users WHERE role='manager' AND is_active=TRUE").fetchall()
+    managers = db.execute("SELECT id FROM users WHERE role='manager' AND is_active=1").fetchall()
     for m in managers:
         create_notification(m['id'], title, message, notif_type, link)
 
@@ -1443,7 +1443,7 @@ def log_action(action, table_name=None, record_id=None, old_data=None, new_data=
 def api_audit_log():
     db = get_db()
     logs = db.execute('''
-        SELECT a.*, u.display_name as user_name
+        SELECT a.*, u.full_name as user_name
         FROM audit_log a
         LEFT JOIN users u ON u.id = a.user_id
         ORDER BY a.created_at DESC
@@ -1465,12 +1465,12 @@ def batches():
         SELECT b.*, p.name as product_name, p.unit,
                s.name as supplier_name,
                CASE 
-                   WHEN b.expiry_date < CURRENT_DATE THEN 'expired'
-                   WHEN b.expiry_date <= (CURRENT_DATE + INTERVAL '7 days') THEN 'critical'
-                   WHEN b.expiry_date <= (CURRENT_DATE + INTERVAL '30 days') THEN 'warning'
+                   WHEN b.expiry_date < date('now') THEN 'expired'
+                   WHEN b.expiry_date <= date('now', '+7 days') THEN 'critical'
+                   WHEN b.expiry_date <= date('now', '+30 days') THEN 'warning'
                    ELSE 'ok'
                END as expiry_status,
-               (b.expiry_date - CURRENT_DATE) as days_until_expiry
+               julianday(b.expiry_date) - julianday('now') as days_until_expiry
         FROM product_batches b
         JOIN products p ON p.id = b.product_id
         LEFT JOIN supplier_invoices si ON si.id = b.supplier_invoice_id
@@ -1487,7 +1487,7 @@ def batches():
         'warning': len([b for b in batches_list if b['expiry_status'] == 'warning']),
     }
     
-    products = db.execute('SELECT id, name FROM products WHERE is_active = TRUE ORDER BY name').fetchall()
+    products = db.execute('SELECT id, name FROM products WHERE is_active = 1 ORDER BY name').fetchall()
     
     return render_template('batches.html', batches=batches_list, stats=stats, products=products)
 
@@ -1589,13 +1589,13 @@ def api_expiring_batches():
     
     batches = db.execute('''
         SELECT b.*, p.name as product_name, p.unit,
-               (b.expiry_date - CURRENT_DATE) as days_remaining
+               julianday(b.expiry_date) - julianday('now') as days_remaining
         FROM product_batches b
         JOIN products p ON p.id = b.product_id
         WHERE b.status = 'active' 
           AND b.quantity_remaining > 0
-          AND b.expiry_date <= (CURRENT_DATE + (%s || ' days')::INTERVAL)
-          AND b.expiry_date >= CURRENT_DATE
+          AND b.expiry_date <= date('now', '+' || %s || ' days')
+          AND b.expiry_date >= date('now')
         ORDER BY b.expiry_date ASC
     ''', (days,)).fetchall()
     
@@ -1609,12 +1609,12 @@ def api_expired_batches():
     
     batches = db.execute('''
         SELECT b.*, p.name as product_name, p.unit,
-               (CURRENT_DATE - b.expiry_date) as days_expired
+               julianday('now') - julianday(b.expiry_date) as days_expired
         FROM product_batches b
         JOIN products p ON p.id = b.product_id
         WHERE b.status = 'active' 
           AND b.quantity_remaining > 0
-          AND b.expiry_date < CURRENT_DATE
+          AND b.expiry_date < date('now')
         ORDER BY b.expiry_date ASC
     ''').fetchall()
     
@@ -1645,11 +1645,11 @@ def check_expiry_alerts():
         JOIN products p ON p.id = b.product_id
         WHERE b.status = 'active' 
           AND b.quantity_remaining > 0
-          AND b.expiry_date <= (CURRENT_DATE + INTERVAL '7 days')
-          AND b.expiry_date > CURRENT_DATE
+          AND b.expiry_date <= date('now', '+7 days')
+          AND b.expiry_date > date('now')
           AND b.id NOT IN (
               SELECT batch_id FROM expiry_alerts 
-              WHERE alert_type = 'approaching' AND alert_date = CURRENT_DATE
+              WHERE alert_type = 'approaching' AND alert_date = date('now')
           )
     ''').fetchall()
     
@@ -1657,7 +1657,7 @@ def check_expiry_alerts():
         # إنشاء تنبيه
         db.execute('''
             INSERT INTO expiry_alerts (batch_id, alert_type, alert_date)
-            VALUES (%s, 'approaching', CURRENT_DATE)
+            VALUES (%s, 'approaching', date('now'))
         ''', (batch['id'],))
         
         # إرسال إشعار للمديرين
@@ -1689,7 +1689,7 @@ def pos():
                    0
                ) as price
         FROM products p
-        WHERE p.is_active = TRUE
+        WHERE p.is_active = 1
         ORDER BY p.name
     ''').fetchall()
     
@@ -1804,7 +1804,7 @@ def api_pos_daily_report():
             SUM(CASE WHEN payment_method = 'card' THEN total_amount ELSE 0 END) as card_sales,
             SUM(CASE WHEN payment_method = 'credit' THEN total_amount ELSE 0 END) as credit_sales
         FROM pos_invoices
-        WHERE created_at::DATE = %s
+        WHERE date(created_at) = %s
     ''', (today,)).fetchone()
     
     return jsonify(dict(data) if data else {})
@@ -1813,7 +1813,7 @@ def api_pos_daily_report():
 def pos_login():
     """صفحة تسجيل دخول الكاشير"""
     db = get_db()
-    cashiers = db.execute("SELECT id, display_name FROM users WHERE role IN ('cashier', 'manager')").fetchall()
+    cashiers = db.execute("SELECT id, full_name FROM users WHERE role IN ('cashier', 'manager')").fetchall()
     return render_template('pos_login.html', cashiers=cashiers)
 
 @app.route('/api/pos/verify-pin', methods=['POST'])
@@ -1835,7 +1835,7 @@ def api_pos_verify_pin():
         if pin == '1234':
             session['user_id'] = user['id']
             session['username'] = user['username']
-            session['display_name'] = user['display_name']
+            session['full_name'] = user['full_name']
             session['role'] = user['role']
             return jsonify({'success': True})
     
@@ -2032,7 +2032,7 @@ def api_pos_reports():
             COALESCE(SUM(CASE WHEN payment_method = 'bank' THEN total_amount ELSE 0 END), 0) as bank_sales,
             COALESCE(SUM(CASE WHEN payment_method = 'credit' THEN total_amount ELSE 0 END), 0) as credit_sales
         FROM pos_invoices
-        WHERE created_at::DATE BETWEEN %s AND %s
+        WHERE date(created_at) BETWEEN %s AND %s
     ''', (date_from, date_to)).fetchone()
     
     # عدد الأصناف المباعة
@@ -2040,7 +2040,7 @@ def api_pos_reports():
         SELECT COALESCE(SUM(pii.quantity), 0) as total_items
         FROM pos_invoice_items pii
         JOIN pos_invoices pi ON pi.id = pii.invoice_id
-        WHERE pi.created_at::DATE BETWEEN %s AND %s
+        WHERE date(pi.created_at) BETWEEN %s AND %s
     ''', (date_from, date_to)).fetchone()
     
     # أكثر المنتجات مبيعاً
@@ -2050,7 +2050,7 @@ def api_pos_reports():
                SUM(pii.total) as total
         FROM pos_invoice_items pii
         JOIN pos_invoices pi ON pi.id = pii.invoice_id
-        WHERE pi.created_at::DATE BETWEEN %s AND %s
+        WHERE date(pi.created_at) BETWEEN %s AND %s
         GROUP BY pii.product_id, pii.product_name
         ORDER BY total DESC
         LIMIT 10
@@ -2058,12 +2058,12 @@ def api_pos_reports():
     
     # أداء الكاشير
     cashier_stats = db.execute('''
-        SELECT u.display_name as name,
+        SELECT u.full_name as name,
                COUNT(*) as invoices,
                COALESCE(SUM(pi.total_amount), 0) as total
         FROM pos_invoices pi
         JOIN users u ON u.id = pi.created_by
-        WHERE pi.created_at::DATE BETWEEN %s AND %s
+        WHERE date(pi.created_at) BETWEEN %s AND %s
         GROUP BY pi.created_by
         ORDER BY total DESC
     ''', (date_from, date_to)).fetchall()
@@ -2073,19 +2073,19 @@ def api_pos_reports():
         SELECT strftime('%H', created_at) as hour,
                COALESCE(SUM(total_amount), 0) as total
         FROM pos_invoices
-        WHERE created_at::DATE BETWEEN %s AND %s
+        WHERE date(created_at) BETWEEN %s AND %s
         GROUP BY hour
         ORDER BY hour
     ''', (date_from, date_to)).fetchall()
     
     # آخر الفواتير
     recent_invoices = db.execute('''
-        SELECT pi.*, u.display_name as cashier,
+        SELECT pi.*, u.full_name as cashier,
                strftime('%Y-%m-%d %H:%M', pi.created_at) as date,
                (SELECT COUNT(*) FROM pos_invoice_items WHERE invoice_id = pi.id) as items_count
         FROM pos_invoices pi
         LEFT JOIN users u ON u.id = pi.created_by
-        WHERE pi.created_at::DATE BETWEEN %s AND %s
+        WHERE date(pi.created_at) BETWEEN %s AND %s
         ORDER BY pi.id DESC
         LIMIT 50
     ''', (date_from, date_to)).fetchall()
@@ -2184,7 +2184,7 @@ def api_category(id):
 @role_required('manager')
 def units():
     db = get_db()
-    units_list = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
+    units_list = db.execute('SELECT * FROM units WHERE is_active = 1 ORDER BY name').fetchall()
     return render_template('units.html', units=units_list)
 
 @app.route('/api/units', methods=['GET', 'POST'])
@@ -2204,7 +2204,7 @@ def api_units():
         db.commit()
         return jsonify({'success': True, 'message': 'تم إضافة الوحدة'})
     
-    units_list = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
+    units_list = db.execute('SELECT * FROM units WHERE is_active = 1 ORDER BY name').fetchall()
     return jsonify([dict(u) for u in units_list])
 
 @app.route('/api/units/<int:id>', methods=['PUT', 'DELETE'])
@@ -2225,7 +2225,7 @@ def api_unit(id):
         if used > 0:
             return jsonify({'success': False, 'message': f'لا يمكن حذف الوحدة - مستخدمة في {used} صنف'})
         
-        db.execute('UPDATE units SET is_active = FALSE WHERE id = %s', (id,))
+        db.execute('UPDATE units SET is_active = 0 WHERE id = %s', (id,))
         db.commit()
         return jsonify({'success': True, 'message': 'تم حذف الوحدة'})
 
@@ -2238,7 +2238,7 @@ def api_unit(id):
 def barcode_scanner():
     db = get_db()
     categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
-    units = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
+    units = db.execute('SELECT * FROM units WHERE is_active = 1 ORDER BY name').fetchall()
     return render_template('barcode_scanner.html', categories=categories, units=units)
 
 @app.route('/api/barcode/<barcode>')
@@ -2252,7 +2252,7 @@ def api_barcode_lookup(barcode):
                p.sell_price as price
         FROM products p
         LEFT JOIN categories c ON c.id = p.category_id
-        WHERE p.barcode = %s AND p.is_active = TRUE
+        WHERE p.barcode = %s AND p.is_active = 1
     ''', (barcode,)).fetchone()
     
     if product:
@@ -2264,7 +2264,7 @@ def api_barcode_lookup(barcode):
         FROM product_units pu
         JOIN products p ON p.id = pu.product_id
         LEFT JOIN categories c ON c.id = p.category_id
-        WHERE pu.barcode = %s AND p.is_active = TRUE
+        WHERE pu.barcode = %s AND p.is_active = 1
     ''', (barcode,)).fetchone()
     
     if product_unit:
@@ -2278,7 +2278,7 @@ def api_barcode_lookup(barcode):
         FROM product_barcodes pb
         JOIN products p ON p.id = pb.product_id
         LEFT JOIN categories c ON c.id = p.category_id
-        WHERE pb.barcode = %s AND p.is_active = TRUE
+        WHERE pb.barcode = %s AND p.is_active = 1
     ''', (barcode,)).fetchone()
     
     if multi_barcode:
@@ -2301,7 +2301,7 @@ def api_barcode_lookup(barcode):
         JOIN products p ON p.id = sp.product_id
         LEFT JOIN categories c ON c.id = p.category_id
         LEFT JOIN suppliers s ON s.id = sp.supplier_id
-        WHERE sp.supplier_barcode = %s AND sp.is_active = TRUE
+        WHERE sp.supplier_barcode = %s AND sp.is_active = 1
     ''', (barcode,)).fetchone()
     
     if supplier_product:
@@ -2309,108 +2309,14 @@ def api_barcode_lookup(barcode):
     
     return jsonify({'found': False})
 
-@app.route('/api/products/<int:product_id>/barcodes', methods=['GET', 'POST'])
+@app.route('/api/products/<int:product_id>/barcodes')
 @login_required
 def api_product_barcodes(product_id):
     db = get_db()
-    
-    if request.method == 'POST':
-        data = request.json
-        try:
-            db.execute('''
-                INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, cost_price, sell_price)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            ''', (product_id, data.get('barcode'), data.get('unit'), 
-                  data.get('pack_size', 1), data.get('cost_price', 0), data.get('sell_price', 0)))
-            db.commit()
-            return jsonify({'success': True})
-        except Exception as e:
-            db.rollback()
-            return jsonify({'success': False, 'message': str(e)})
-    
     barcodes = db.execute('''
         SELECT * FROM product_barcodes WHERE product_id = %s ORDER BY pack_size
     ''', (product_id,)).fetchall()
     return jsonify([dict(b) for b in barcodes])
-
-# ═══════════════════════════════════════════════════════════════
-# تفاصيل الصنف
-# ═══════════════════════════════════════════════════════════════
-
-@app.route('/products/<int:product_id>')
-@login_required
-def product_detail(product_id):
-    db = get_db()
-    
-    # بيانات الصنف
-    product = db.execute('''
-        SELECT p.*, c.name as category_name
-        FROM products p
-        LEFT JOIN categories c ON c.id = p.category_id
-        WHERE p.id = %s
-    ''', (product_id,)).fetchone()
-    
-    if not product:
-        flash('الصنف غير موجود', 'error')
-        return redirect(url_for('products'))
-    
-    # الوحدات والباركودات
-    barcodes = db.execute('''
-        SELECT * FROM product_barcodes WHERE product_id = %s ORDER BY pack_size
-    ''', (product_id,)).fetchall()
-    
-    # حركات المخزون
-    try:
-        movements = db.execute('''
-            SELECT im.*, u.display_name as user_name
-            FROM inventory_movements im
-            LEFT JOIN users u ON u.id = im.user_id
-            WHERE im.product_id = %s
-            ORDER BY im.created_at DESC
-            LIMIT 20
-        ''', (product_id,)).fetchall()
-    except:
-        movements = []
-    
-    # تاريخ الأسعار
-    try:
-        price_history = db.execute('''
-            SELECT * FROM pricing_history
-            WHERE product_id = %s
-            ORDER BY created_at DESC
-            LIMIT 20
-        ''', (product_id,)).fetchall()
-    except:
-        price_history = []
-    
-    # أسعار الموردين
-    try:
-        supplier_prices = db.execute('''
-            SELECT sp.*, s.name as supplier_name
-            FROM supplier_prices sp
-            JOIN suppliers s ON s.id = sp.supplier_id
-            WHERE sp.product_id = %s
-            ORDER BY sp.recorded_at DESC
-        ''', (product_id,)).fetchall()
-    except:
-        supplier_prices = []
-    
-    return render_template('product_detail.html',
-                         product=product, barcodes=barcodes,
-                         movements=movements, price_history=price_history,
-                         supplier_prices=supplier_prices)
-
-@app.route('/api/barcodes/<int:barcode_id>', methods=['DELETE'])
-@login_required
-def api_delete_barcode(barcode_id):
-    db = get_db()
-    try:
-        db.execute('DELETE FROM product_barcodes WHERE id = %s', (barcode_id,))
-        db.commit()
-        return jsonify({'success': True})
-    except Exception as e:
-        db.rollback()
-        return jsonify({'success': False, 'message': str(e)})
 
 # ═══════════════════════════════════════════════════════════════
 # إدارة الأصناف
@@ -2429,7 +2335,7 @@ def products():
     brand_filter = request.args.get('brand', '').strip()
     
     # Build query
-    where = ['p.is_active = TRUE']
+    where = ['p.is_active = 1']
     params = []
     
     if search:
@@ -2465,10 +2371,10 @@ def products():
     categories = db.execute('SELECT * FROM categories ORDER BY id').fetchall()
     
     # Get unique brands for filter
-    brands = db.execute('SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL AND is_active=TRUE ORDER BY brand').fetchall()
+    brands = db.execute('SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL AND is_active=1 ORDER BY brand').fetchall()
     
     try:
-        units_list = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
+        units_list = db.execute('SELECT * FROM units WHERE is_active = 1 ORDER BY name').fetchall()
     except:
         units_list = []
     
@@ -2518,7 +2424,7 @@ def api_products():
         SELECT p.*, c.name as category_name
         FROM products p
         LEFT JOIN categories c ON c.id = p.category_id
-        WHERE p.is_active = TRUE
+        WHERE p.is_active = 1
         ORDER BY p.name
     ''').fetchall()
     return jsonify([dict(p) for p in products_list])
@@ -2561,7 +2467,7 @@ def api_product(id):
         return jsonify({'success': True, 'message': 'تم تحديث الصنف'})
     
     elif request.method == 'DELETE':
-        db.execute('UPDATE products SET is_active=FALSE WHERE id=%s', (id,))
+        db.execute('UPDATE products SET is_active=0 WHERE id=%s', (id,))
         db.commit()
         return jsonify({'success': True, 'message': 'تم حذف الصنف'})
 
@@ -2687,9 +2593,9 @@ def supplier_products():
     else:
         items = db.execute(query + ' ORDER BY s.name, sp.supplier_product_name').fetchall()
     
-    suppliers = db.execute('SELECT * FROM suppliers WHERE is_active=TRUE ORDER BY name').fetchall()
-    products_list = db.execute('SELECT * FROM products WHERE is_active=TRUE ORDER BY name').fetchall()
-    units_list = db.execute('SELECT * FROM units WHERE is_active=TRUE ORDER BY name').fetchall()
+    suppliers = db.execute('SELECT * FROM suppliers WHERE is_active=1 ORDER BY name').fetchall()
+    products_list = db.execute('SELECT * FROM products WHERE is_active=1 ORDER BY name').fetchall()
+    units_list = db.execute('SELECT * FROM units WHERE is_active=1 ORDER BY name').fetchall()
     
     return render_template('supplier_products.html', 
                          items=items, suppliers=suppliers, 
@@ -2862,17 +2768,17 @@ def supplier_prices():
     # مقارنة أسعار الموردين لكل صنف
     comparison = db.execute('''
         SELECT p.id, p.name, p.unit,
-               STRING_AGG(s.name || ':' || COALESCE(sp.unit_price::TEXT, '0'), '|') as prices
+               GROUP_CONCAT(s.name || ':' || sp.unit_price, '|') as prices
         FROM products p
         JOIN supplier_prices sp ON sp.product_id = p.id
         JOIN suppliers s ON s.id = sp.supplier_id
-        WHERE p.is_active = TRUE
+        WHERE p.is_active = 1
         GROUP BY p.id
         ORDER BY p.name
     ''').fetchall()
     
-    suppliers = db.execute('SELECT * FROM suppliers WHERE is_active=TRUE ORDER BY name').fetchall()
-    products_list = db.execute('SELECT * FROM products WHERE is_active=TRUE ORDER BY name').fetchall()
+    suppliers = db.execute('SELECT * FROM suppliers WHERE is_active=1 ORDER BY name').fetchall()
+    products_list = db.execute('SELECT * FROM products WHERE is_active=1 ORDER BY name').fetchall()
     
     return render_template('supplier_prices.html', 
                          comparison=comparison, 
@@ -2915,8 +2821,8 @@ def api_supplier_prices():
 @role_required('manager')
 def competitor_prices():
     db = get_db()
-    competitors = db.execute('SELECT * FROM competitors WHERE is_active=TRUE ORDER BY name').fetchall()
-    products_list = db.execute('SELECT * FROM products WHERE is_active=TRUE ORDER BY name').fetchall()
+    competitors = db.execute('SELECT * FROM competitors WHERE is_active=1 ORDER BY name').fetchall()
+    products_list = db.execute('SELECT * FROM products WHERE is_active=1 ORDER BY name').fetchall()
     
     prices = db.execute('''
         SELECT cp.*, c.name as competitor_name, p.name as product_name
@@ -2954,7 +2860,7 @@ def api_competitor_prices():
 def pricing():
     db = get_db()
     price_lists = db.execute('SELECT * FROM price_lists ORDER BY is_default DESC, name').fetchall()
-    products_list = db.execute('SELECT * FROM products WHERE is_active=TRUE ORDER BY name').fetchall()
+    products_list = db.execute('SELECT * FROM products WHERE is_active=1 ORDER BY name').fetchall()
     
     # جلب كل الأسعار
     prices = db.execute('''
@@ -3003,14 +2909,14 @@ def supplier_invoices():
     db = get_db()
     
     invoices = db.execute('''
-        SELECT si.*, s.name as supplier_name, u.display_name as created_by_name
+        SELECT si.*, s.name as supplier_name, u.full_name as created_by_name
         FROM supplier_invoices si
         JOIN suppliers s ON s.id = si.supplier_id
         JOIN users u ON u.id = si.created_by
         ORDER BY si.created_at DESC
     ''').fetchall()
     
-    suppliers = db.execute('SELECT * FROM suppliers WHERE is_active=TRUE ORDER BY name').fetchall()
+    suppliers = db.execute('SELECT * FROM suppliers WHERE is_active=1 ORDER BY name').fetchall()
     
     return render_template('supplier_invoices.html', invoices=invoices, suppliers=suppliers)
 
@@ -3021,7 +2927,7 @@ def view_supplier_invoice(id):
     
     invoice = db.execute('''
         SELECT si.*, s.name as supplier_name, s.phone as supplier_phone,
-               u.display_name as created_by_name
+               u.full_name as created_by_name
         FROM supplier_invoices si
         JOIN suppliers s ON s.id = si.supplier_id
         JOIN users u ON u.id = si.created_by
@@ -3104,7 +3010,7 @@ def new_supplier_invoice():
             return jsonify({'success': False, 'message': 'يجب إضافة بند واحد على الأقل'})
         
         supplier = db.execute(
-            'SELECT id FROM suppliers WHERE id = %s AND is_active = TRUE',
+            'SELECT id FROM suppliers WHERE id = %s AND is_active = 1',
             (supplier_id,)
         ).fetchone()
         
@@ -3153,7 +3059,7 @@ def new_supplier_invoice():
         db.commit()
         return jsonify({'success': True, 'id': invoice_id, 'invoice_number': invoice_number})
     
-    suppliers = db.execute('SELECT * FROM suppliers WHERE is_active=TRUE ORDER BY name').fetchall()
+    suppliers = db.execute('SELECT * FROM suppliers WHERE is_active=1 ORDER BY name').fetchall()
     return render_template('supplier_invoice_form.html', suppliers=suppliers)
 
 @app.route('/api/supplier/<int:supplier_id>/products')
@@ -3180,7 +3086,7 @@ def agent_invoices():
     
     invoices = db.execute('''
         SELECT ai.*, si.invoice_number, s.name as supplier_name, 
-               u.display_name as agent_name, ur.display_name as received_by_name
+               u.full_name as agent_name, ur.full_name as received_by_name
         FROM agent_invoices ai
         JOIN supplier_invoices si ON si.id = ai.supplier_invoice_id
         JOIN suppliers s ON s.id = si.supplier_id
@@ -3392,7 +3298,7 @@ def warehouse():
     
     # فواتير بانتظار الاستلام
     pending = db.execute('''
-        SELECT ai.*, si.invoice_number, s.name as supplier_name, u.display_name as agent_name
+        SELECT ai.*, si.invoice_number, s.name as supplier_name, u.full_name as agent_name
         FROM agent_invoices ai
         JOIN supplier_invoices si ON si.id = ai.supplier_invoice_id
         JOIN suppliers s ON s.id = si.supplier_id
@@ -3404,7 +3310,7 @@ def warehouse():
     # آخر الاستلامات
     recent = db.execute('''
         SELECT ai.*, si.invoice_number, s.name as supplier_name, 
-               u.display_name as agent_name, ur.display_name as received_by_name
+               u.full_name as agent_name, ur.full_name as received_by_name
         FROM agent_invoices ai
         JOIN supplier_invoices si ON si.id = ai.supplier_invoice_id
         JOIN suppliers s ON s.id = si.supplier_id
@@ -3500,7 +3406,7 @@ def inventory():
         SELECT p.*, c.name as category_name
         FROM products p
         LEFT JOIN categories c ON c.id = p.category_id
-        WHERE p.is_active = TRUE
+        WHERE p.is_active = 1
         ORDER BY p.name
     ''').fetchall()
     
@@ -3533,7 +3439,7 @@ def inventory():
 def product_movements(product_id):
     db = get_db()
     movements = db.execute('''
-        SELECT im.*, u.display_name as created_by_name
+        SELECT im.*, u.full_name as created_by_name
         FROM inventory_movements im
         LEFT JOIN users u ON u.id = im.created_by
         WHERE im.product_id = %s
@@ -3580,7 +3486,7 @@ def report_supplier_debts():
                SUM(si.paid_amount) as total_paid
         FROM suppliers s
         LEFT JOIN supplier_invoices si ON si.supplier_id = s.id
-        WHERE s.is_active = TRUE
+        WHERE s.is_active = 1
         GROUP BY s.id
         HAVING (SUM(si.total_amount) - SUM(si.paid_amount)) > 0
         ORDER BY (SUM(si.total_amount) - SUM(si.paid_amount)) DESC
@@ -3670,9 +3576,8 @@ def generate_ssl_cert():
 if __name__ == '__main__':
     import sys
     
-    # PostgreSQL: tables already created, skip init_db
-    # with app.app_context():
-    #     init_db()
+    with app.app_context():
+        init_db()
     
     # التحقق من وضع HTTPS
     use_https = '--https' in sys.argv or os.environ.get('USE_HTTPS', '').lower() == 'true'
