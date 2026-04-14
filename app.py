@@ -10,15 +10,21 @@ Frontend: Tailwind CSS + Alpine.js
 import os
 import json
 import secrets
+import uuid
 import psycopg2
 import psycopg2.extras
+from decimal import Decimal
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, session, jsonify, g
+    flash, session, jsonify, g, send_file
 )
+from io import BytesIO
+import openpyxl
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
 # ═══════════════════════════════════════════════════════════════
 # إعدادات التطبيق
@@ -38,6 +44,8 @@ app.config['PG_PASSWORD'] = os.environ.get('PG_PASSWORD', '774424555')
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', '0') == '1'
+app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static', 'uploads')
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 app.config['DEBUG'] = os.environ.get('FLASK_DEBUG', '0') == '1'
 
 # ═══════════════════════════════════════════════════════════════
@@ -778,6 +786,42 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def get_user_permissions(user_id):
+    """جلب صلاحيات المستخدم"""
+    db = get_db()
+    perms = db.execute('SELECT module_code, can_view, can_add, can_edit, can_delete FROM user_permissions WHERE user_id = %s', (user_id,)).fetchall()
+    result = {}
+    for p in perms:
+        result[p['module_code']] = {
+            'view': p['can_view'], 'add': p['can_add'],
+            'edit': p['can_edit'], 'delete': p['can_delete']
+        }
+    return result
+
+def permission_required(module_code, action='view'):
+    """التحقق من صلاحية المستخدم لصفحة/إجراء معين"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return redirect(url_for('login'))
+            if session.get('must_change_password'):
+                return redirect(url_for('force_change_password'))
+            
+            perms = get_user_permissions(session['user_id'])
+            module_perm = perms.get(module_code, {})
+            
+            if not module_perm.get(action, False):
+                msg = 'ليس لديك صلاحية للوصول لهذه الصفحة'
+                if is_api_request():
+                    return jsonify({'success': False, 'message': msg}), 403
+                flash(msg, 'error')
+                return redirect(url_for('dashboard'))
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
 def is_api_request():
     return request.path.startswith('/api/') or request.is_json
 
@@ -825,7 +869,15 @@ def get_csrf_token():
 
 @app.context_processor
 def inject_csrf_token():
-    return {'csrf_token': get_csrf_token}
+    user_perms = {}
+    if 'user_id' in session:
+        user_perms = get_user_permissions(session['user_id'])
+    return {'csrf_token': get_csrf_token, 'user_perms': user_perms}
+
+def has_perm(module_code, action='view'):
+    """helper للقوالب"""
+    perms = get_user_permissions(session.get('user_id', 0))
+    return perms.get(module_code, {}).get(action, False)
 
 @app.before_request
 def csrf_protect():
@@ -866,10 +918,18 @@ def login():
         password = request.form.get('password', '')
         
         db = get_db()
-        user = db.execute(
-            'SELECT * FROM users WHERE username = %s AND is_active = TRUE',
-            (username,)
-        ).fetchone()
+        # البحث بالرقم أولاً، ثم بالاسم
+        user = None
+        if username.isdigit():
+            user = db.execute(
+                'SELECT * FROM users WHERE id = %s AND is_active = TRUE',
+                (int(username),)
+            ).fetchone()
+        if not user:
+            user = db.execute(
+                'SELECT * FROM users WHERE username = %s AND is_active = TRUE',
+                (username,)
+            ).fetchone()
         
         if user and check_password_hash(user['password_hash'], password):
             session.clear()
@@ -2241,71 +2301,1156 @@ def barcode_scanner():
     units = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
     return render_template('barcode_scanner.html', categories=categories, units=units)
 
+@app.route('/permissions')
+@login_required
+@permission_required('users', 'edit')
+def permissions_page():
+    db = get_db()
+    users = db.execute('SELECT id, username, display_name, role FROM users WHERE is_active = TRUE ORDER BY id').fetchall()
+    modules = db.execute('SELECT * FROM modules ORDER BY sort_order').fetchall()
+    
+    # جلب كل الصلاحيات
+    all_perms = db.execute('SELECT * FROM user_permissions').fetchall()
+    perms_map = {}
+    for p in all_perms:
+        key = f"{p['user_id']}_{p['module_code']}"
+        perms_map[key] = {'view': p['can_view'], 'add': p['can_add'], 'edit': p['can_edit'], 'delete': p['can_delete']}
+    
+    return render_template('permissions.html', users=users, modules=modules, perms_map=perms_map)
+
+@app.route('/api/permissions/save', methods=['POST'])
+@login_required
+@permission_required('users', 'edit')
+def api_save_permissions():
+    db = get_db()
+    data = request.get_json() or {}
+    user_id = data.get('user_id')
+    permissions = data.get('permissions', {})
+    
+    if not user_id:
+        return jsonify({'success': False, 'message': 'المستخدم مطلوب'}), 400
+    
+    for module_code, perm in permissions.items():
+        db.execute('''
+            INSERT INTO user_permissions (user_id, module_code, can_view, can_add, can_edit, can_delete)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, module_code) DO UPDATE SET
+                can_view = EXCLUDED.can_view, can_add = EXCLUDED.can_add,
+                can_edit = EXCLUDED.can_edit, can_delete = EXCLUDED.can_delete
+        ''', (user_id, module_code, perm.get('view', False), perm.get('add', False), perm.get('edit', False), perm.get('delete', False)))
+    
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم حفظ الصلاحيات'})
+
+@app.route('/requests')
+@login_required
+def general_requests_page():
+    db = get_db()
+    status_filter = request.args.get('status', 'all')
+    type_filter = request.args.get('type', 'all')
+    
+    where = []
+    params = []
+    if status_filter != 'all':
+        where.append('r.status = %s')
+        params.append(status_filter)
+    if type_filter != 'all':
+        where.append('r.request_type = %s')
+        params.append(type_filter)
+    
+    where_sql = ' AND '.join(where) if where else '1=1'
+    
+    requests_list = db.execute(f'''
+        SELECT r.*, u.display_name as requested_by_name, u2.display_name as reviewed_by_name,
+               p.name as product_name_ref, s.name as supplier_name_ref
+        FROM general_requests r
+        LEFT JOIN users u ON u.id = r.requested_by
+        LEFT JOIN users u2 ON u2.id = r.reviewed_by
+        LEFT JOIN products p ON p.id = r.product_id
+        LEFT JOIN suppliers s ON s.id = r.supplier_id
+        WHERE {where_sql}
+        ORDER BY r.id DESC
+    ''', params).fetchall()
+    
+    counts = {}
+    for s in ['all', 'pending', 'approved', 'rejected', 'done']:
+        if s == 'all':
+            counts[s] = db.execute('SELECT COUNT(*) as c FROM general_requests').fetchone()['c']
+        else:
+            counts[s] = db.execute('SELECT COUNT(*) as c FROM general_requests WHERE status = %s', (s,)).fetchone()['c']
+    
+    categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
+    suppliers = db.execute('SELECT id, name FROM suppliers ORDER BY name').fetchall()
+    
+    import json as json_mod
+    parsed_requests = []
+    for r in requests_list:
+        rd = dict(r)
+        rd['proposed'] = None
+        details = rd.get('details') or ''
+        try:
+            rd['proposed'] = json_mod.loads(details)
+            rd['details_text'] = ''
+        except:
+            rd['details_text'] = details
+        parsed_requests.append(rd)
+    
+    return render_template('general_requests.html', requests=parsed_requests, counts=counts, 
+                         status_filter=status_filter, type_filter=type_filter,
+                         categories=categories, suppliers=suppliers,
+                         units=db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall())
+
+@app.route('/api/requests', methods=['POST'])
+@login_required
+def api_create_request():
+    db = get_db()
+    data = request.get_json() or {}
+    
+    request_type = data.get('request_type')
+    title = (data.get('title') or '').strip()
+    details = (data.get('details') or '').strip()
+    
+    if not request_type or not title:
+        return jsonify({'success': False, 'message': 'نوع الطلب والعنوان مطلوبين'}), 400
+    
+    db.execute('''
+        INSERT INTO general_requests (request_type, title, details, product_id, supplier_id, barcode, priority, requested_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    ''', (
+        request_type, title, details,
+        data.get('product_id') or None, data.get('supplier_id') or None,
+        data.get('barcode') or None, data.get('priority', 'normal'),
+        session['user_id']
+    ))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم رفع الطلب بنجاح'})
+
+@app.route('/api/requests/<int:req_id>/<action>', methods=['POST'])
+@login_required
+def api_request_action(req_id, action):
+    db = get_db()
+    if action not in ('approve', 'reject', 'done'):
+        return jsonify({'success': False, 'message': 'إجراء غير صالح'}), 400
+    
+    status_map = {'approve': 'approved', 'reject': 'rejected', 'done': 'done'}
+    data = request.get_json() or {}
+    
+    db.execute('UPDATE general_requests SET status = %s, reviewed_by = %s, reviewed_at = NOW(), notes = COALESCE(notes, %s) WHERE id = %s',
+               (status_map[action], session['user_id'], data.get('notes', ''), req_id))
+    db.commit()
+    
+    messages = {'approve': 'تم اعتماد الطلب', 'reject': 'تم رفض الطلب', 'done': 'تم إنجاز الطلب'}
+    return jsonify({'success': True, 'message': messages[action]})
+
+@app.route('/ca.pem')
+def download_ca():
+    ca_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ca.pem')
+    if os.path.exists(ca_path):
+        return send_file(ca_path, mimetype='application/x-x509-ca-cert', as_attachment=True, download_name='supermarket-ca.pem')
+    return 'CA not found', 404
+
+# ==================== الدردشة ====================
+@app.route('/chat')
+@login_required
+def chat_page():
+    db = get_db()
+    users = db.execute('SELECT id, username, display_name FROM users ORDER BY id').fetchall()
+    return render_template('chat.html', users=users)
+
+@app.route('/api/chat/messages')
+@login_required
+def api_chat_messages():
+    db = get_db()
+    room = request.args.get('room', 'general')
+    after_id = int(request.args.get('after', 0))
+    
+    if room == 'general':
+        messages = db.execute('''
+            SELECT m.*, COALESCE(u.display_name, u.username) as sender_name
+            FROM chat_messages m
+            JOIN users u ON u.id = m.sender_id
+            WHERE m.room = %s AND m.id > %s
+            ORDER BY m.created_at ASC
+            LIMIT 100
+        ''', (room, after_id)).fetchall()
+    else:
+        other_id = int(room.replace('dm_', ''))
+        messages = db.execute('''
+            SELECT m.*, COALESCE(u.display_name, u.username) as sender_name
+            FROM chat_messages m
+            JOIN users u ON u.id = m.sender_id
+            WHERE m.id > %s AND (
+                (m.sender_id = %s AND m.receiver_id = %s)
+                OR (m.sender_id = %s AND m.receiver_id = %s)
+            )
+            ORDER BY m.created_at ASC
+            LIMIT 100
+        ''', (after_id, session['user_id'], other_id, other_id, session['user_id'])).fetchall()
+        
+        db.execute('UPDATE chat_messages SET is_read = TRUE WHERE receiver_id = %s AND sender_id = %s AND is_read = FALSE',
+                    (session['user_id'], other_id))
+        db.commit()
+    
+    result = []
+    for m in messages:
+        result.append({
+            'id': m['id'],
+            'sender_id': m['sender_id'],
+            'sender_name': m['sender_name'],
+            'message': m['message'],
+            'message_type': m['message_type'],
+            'file_path': m['file_path'],
+            'created_at': m['created_at'].strftime('%H:%M') if m['created_at'] else '',
+            'is_mine': m['sender_id'] == session['user_id']
+        })
+    return jsonify({'success': True, 'messages': result})
+
+@app.route('/api/chat/send', methods=['POST'])
+@login_required
+def api_chat_send():
+    db = get_db()
+    room = request.form.get('room', 'general')
+    message = (request.form.get('message') or '').strip()
+    message_type = 'text'
+    file_path = None
+    receiver_id = None
+    
+    # handle file/voice
+    file = request.files.get('file')
+    if file and file.filename:
+        ext = os.path.splitext(secure_filename(file.filename))[1] or '.bin'
+        fname = f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
+        rel = os.path.join('static', 'uploads', fname).replace('\\', '/')
+        full = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+        file.save(full)
+        file_path = rel
+        if ext.lower() in ['.webm', '.mp3', '.ogg', '.wav', '.m4a']:
+            message_type = 'voice'
+        elif ext.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+            message_type = 'image'
+        else:
+            message_type = 'file'
+        if not message:
+            message = file.filename
+    
+    if not message and not file_path:
+        return jsonify({'success': False, 'message': 'الرسالة فارغة'}), 400
+    
+    if room != 'general' and room.startswith('dm_'):
+        receiver_id = int(room.replace('dm_', ''))
+    
+    db.execute('''
+        INSERT INTO chat_messages (sender_id, receiver_id, room, message, message_type, file_path)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    ''', (session['user_id'], receiver_id, room, message, message_type, file_path))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/chat/unread')
+@login_required
+def api_chat_unread():
+    db = get_db()
+    # عدد غير المقروء لكل مرسل (رسائل خاصة)
+    per_sender = db.execute('''
+        SELECT sender_id, COUNT(*) as cnt 
+        FROM chat_messages 
+        WHERE receiver_id = %s AND is_read = FALSE
+        GROUP BY sender_id
+    ''', (session['user_id'],)).fetchall()
+    
+    # عدد غير المقروء في الغرفة العامة
+    general_count = db.execute('''
+        SELECT COUNT(*) as cnt FROM chat_messages 
+        WHERE room = 'general' AND sender_id != %s AND is_read = FALSE
+        AND id NOT IN (SELECT COALESCE(MAX(id),0) FROM chat_messages WHERE room='general')
+    ''', (session['user_id'],)).fetchone()['cnt']
+    
+    total = sum(r['cnt'] for r in per_sender)
+    senders = {str(r['sender_id']): r['cnt'] for r in per_sender}
+    
+    # آخر رسالة لكل محادثة خاصة
+    last_msgs = db.execute('''
+        SELECT DISTINCT ON (other_id) other_id, message, message_type, created_at, sender_id
+        FROM (
+            SELECT 
+                CASE WHEN sender_id = %s THEN receiver_id ELSE sender_id END as other_id,
+                message, message_type, created_at, sender_id
+            FROM chat_messages 
+            WHERE (sender_id = %s OR receiver_id = %s) AND room != 'general'
+        ) sub
+        ORDER BY other_id, created_at DESC
+    ''', (session['user_id'], session['user_id'], session['user_id'])).fetchall()
+    
+    last_messages = {}
+    for m in last_msgs:
+        preview = m['message'] or ''
+        if m['message_type'] == 'voice':
+            preview = '🎤 رسالة صوتية'
+        elif m['message_type'] == 'image':
+            preview = '📷 صورة'
+        elif m['message_type'] == 'file':
+            preview = '📎 ملف'
+        if len(preview) > 30:
+            preview = preview[:30] + '...'
+        is_mine = m['sender_id'] == session['user_id']
+        last_messages[str(m['other_id'])] = {
+            'preview': ('أنت: ' if is_mine else '') + preview,
+            'time': m['created_at'].strftime('%H:%M') if m['created_at'] else ''
+        }
+    
+    return jsonify({'success': True, 'count': total, 'senders': senders, 'general': general_count, 'last_messages': last_messages})
+
+@app.route('/stocktake')
+@login_required
+def stocktake_page():
+    db = get_db()
+    categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
+    units = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
+
+    open_session = db.execute('''
+        SELECT * FROM stocktake_sessions
+        WHERE created_by = %s AND status = 'open'
+        ORDER BY id DESC LIMIT 1
+    ''', (session['user_id'],)).fetchone()
+
+    recent_items = []
+    recent_requests = []
+    if open_session:
+        recent_items = db.execute('''
+            SELECT * FROM stocktake_items
+            WHERE session_id = %s
+            ORDER BY id DESC LIMIT 20
+        ''', (open_session['id'],)).fetchall()
+        recent_requests = db.execute('''
+            SELECT r.*, c.name as category_name
+            FROM stocktake_product_requests r
+            LEFT JOIN categories c ON c.id = r.category_id
+            WHERE r.session_id = %s
+            ORDER BY r.id DESC LIMIT 20
+        ''', (open_session['id'],)).fetchall()
+
+    return render_template('stocktake.html', categories=categories, units=units, open_session=open_session, recent_items=recent_items, recent_requests=recent_requests)
+
+@app.route('/api/stocktake/session', methods=['POST'])
+@login_required
+def api_create_stocktake_session():
+    db = get_db()
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip() or f"جرد {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    notes = (data.get('notes') or '').strip()
+
+    existing = db.execute('''
+        SELECT * FROM stocktake_sessions
+        WHERE created_by = %s AND status = 'open'
+        ORDER BY id DESC LIMIT 1
+    ''', (session['user_id'],)).fetchone()
+    if existing:
+        return jsonify({'success': True, 'session_id': existing['id'], 'session': dict(existing), 'message': 'توجد جلسة جرد مفتوحة بالفعل'})
+
+    row = db.execute('''
+        INSERT INTO stocktake_sessions (title, notes, status, created_by)
+        VALUES (%s, %s, 'open', %s)
+        RETURNING *
+    ''', (title, notes, session['user_id'])).fetchone()
+    db.commit()
+    return jsonify({'success': True, 'session_id': row['id'], 'session': dict(row)})
+
+@app.route('/api/stocktake/session/current')
+@login_required
+def api_current_stocktake_session():
+    db = get_db()
+    open_session = db.execute('''
+        SELECT * FROM stocktake_sessions
+        WHERE created_by = %s AND status = 'open'
+        ORDER BY id DESC LIMIT 1
+    ''', (session['user_id'],)).fetchone()
+    return jsonify({'success': True, 'session': dict(open_session) if open_session else None})
+
+@app.route('/api/stocktake/session/close', methods=['POST'])
+@login_required
+def api_close_stocktake_session():
+    db = get_db()
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+    
+    if not session_id:
+        return jsonify({'success': False, 'message': 'رقم الجلسة مطلوب'}), 400
+    
+    stocktake_session = db.execute('SELECT * FROM stocktake_sessions WHERE id = %s AND created_by = %s', (session_id, session['user_id'])).fetchone()
+    if not stocktake_session:
+        return jsonify({'success': False, 'message': 'جلسة الجرد غير موجودة'}), 404
+    
+    if stocktake_session['status'] == 'closed':
+        return jsonify({'success': False, 'message': 'الجلسة مغلقة بالفعل'}), 400
+    
+    db.execute('UPDATE stocktake_sessions SET status = %s, closed_at = NOW() WHERE id = %s', ('closed', session_id))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم إغلاق جلسة الجرد'})
+
+@app.route('/stocktake/review')
+@login_required
+def stocktake_review_page():
+    db = get_db()
+    
+    # جلسات الجرد
+    sessions = db.execute('''
+        SELECT s.*, u.username as created_by_name,
+               (SELECT COUNT(*) FROM stocktake_items WHERE session_id = s.id) as items_count,
+               (SELECT COUNT(*) FROM stocktake_product_requests WHERE session_id = s.id) as requests_count
+        FROM stocktake_sessions s
+        LEFT JOIN users u ON u.id = s.created_by
+        ORDER BY s.id DESC
+        LIMIT 50
+    ''').fetchall()
+    
+    return render_template('stocktake_review.html', sessions=sessions)
+
+@app.route('/stocktake/requests')
+@login_required
+def stocktake_requests_page():
+    db = get_db()
+    status_filter = request.args.get('status', 'all')
+    
+    if status_filter == 'all':
+        requests_list = db.execute('''
+            SELECT r.*, c.name as category_name, 
+                   u.display_name as requested_by_name,
+                   u2.display_name as reviewed_by_name,
+                   s.title as session_title
+            FROM stocktake_product_requests r
+            LEFT JOIN categories c ON c.id = r.category_id
+            LEFT JOIN users u ON u.id = r.requested_by
+            LEFT JOIN users u2 ON u2.id = r.reviewed_by
+            LEFT JOIN stocktake_sessions s ON s.id = r.session_id
+            ORDER BY r.id DESC
+        ''').fetchall()
+    else:
+        requests_list = db.execute('''
+            SELECT r.*, c.name as category_name,
+                   u.display_name as requested_by_name,
+                   u2.display_name as reviewed_by_name,
+                   s.title as session_title
+            FROM stocktake_product_requests r
+            LEFT JOIN categories c ON c.id = r.category_id
+            LEFT JOIN users u ON u.id = r.requested_by
+            LEFT JOIN users u2 ON u2.id = r.reviewed_by
+            LEFT JOIN stocktake_sessions s ON s.id = r.session_id
+            WHERE r.status = %s
+            ORDER BY r.id DESC
+        ''', (status_filter,)).fetchall()
+    
+    categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
+    counts = {
+        'all': db.execute('SELECT COUNT(*) as c FROM stocktake_product_requests').fetchone()['c'],
+        'pending': db.execute("SELECT COUNT(*) as c FROM stocktake_product_requests WHERE status='pending'").fetchone()['c'],
+        'approved': db.execute("SELECT COUNT(*) as c FROM stocktake_product_requests WHERE status='approved'").fetchone()['c'],
+        'rejected': db.execute("SELECT COUNT(*) as c FROM stocktake_product_requests WHERE status='rejected'").fetchone()['c'],
+    }
+    units = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
+    
+    # طلبات تعديل الأصناف
+    edit_requests_raw = db.execute('''
+        SELECT r.*, u.display_name as requested_by_name, u2.display_name as reviewed_by_name, p.name as current_name
+        FROM stocktake_edit_requests r
+        LEFT JOIN users u ON u.id = r.requested_by
+        LEFT JOIN users u2 ON u2.id = r.reviewed_by
+        LEFT JOIN products p ON p.id = r.product_id
+        ORDER BY r.id DESC
+    ''').fetchall()
+    
+    import json as json_mod
+    edit_requests = []
+    for er in edit_requests_raw:
+        er_dict = dict(er)
+        details = er_dict.get('details') or ''
+        er_dict['note'] = ''
+        er_dict['proposed'] = None
+        if '=== البيانات المقترحة ===' in details:
+            parts = details.split('=== البيانات المقترحة ===')
+            er_dict['note'] = parts[0].strip()
+            try:
+                er_dict['proposed'] = json_mod.loads(parts[1])
+            except:
+                er_dict['proposed'] = None
+        edit_requests.append(er_dict)
+    
+    return render_template('stocktake_requests.html', requests=requests_list, categories=categories, units=units, status_filter=status_filter, counts=counts, edit_requests=edit_requests)
+
+@app.route('/api/stocktake/request/<int:request_id>/approve', methods=['POST'])
+@login_required
+def api_approve_request(request_id):
+    db = get_db()
+    req = db.execute('SELECT * FROM stocktake_product_requests WHERE id = %s', (request_id,)).fetchone()
+    if not req:
+        return jsonify({'success': False, 'message': 'الطلب غير موجود'}), 404
+    
+    if req['status'] != 'pending':
+        return jsonify({'success': False, 'message': 'الطلب تم معالجته مسبقًا'}), 400
+    
+    # إنشاء الصنف الجديد
+    product_code = f"NEW-{request_id}"
+    new_product = db.execute('''
+        INSERT INTO products (product_code, name, barcode, category_id, unit, cost_price, sell_price, current_stock, is_active)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+        RETURNING id
+    ''', (
+        product_code,
+        req['product_name'] or f'صنف جديد {req["barcode"]}',
+        req['barcode'],
+        req['category_id'],
+        req['unit'] or 'حبه',
+        req['cost_price'] or 0,
+        req['sell_price'] or 0,
+        req['quantity_counted'] or 0
+    )).fetchone()
+    
+    # إضافة الوحدات الإضافية إذا وجدت
+    data = request.get_json() or {}
+    extra_units = data.get('extra_units', [])
+    for eu in extra_units:
+        if eu.get('unit'):
+            db.execute('''
+                INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, cost_price, sell_price)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (
+                new_product['id'], eu.get('barcode') or '', eu['unit'],
+                int(eu.get('pack_size') or 1),
+                Decimal(str(eu['cost_price'])) if eu.get('cost_price') else None,
+                Decimal(str(eu['sell_price'])) if eu.get('sell_price') else None
+            ))
+    
+    db.execute('''
+        UPDATE stocktake_product_requests 
+        SET status = 'approved', reviewed_by = %s, reviewed_at = NOW()
+        WHERE id = %s
+    ''', (session['user_id'], request_id))
+    db.commit()
+    
+    return jsonify({'success': True, 'message': f'تم اعتماد الصنف وإضافته برقم {new_product["id"]}', 'product_id': new_product['id']})
+
+@app.route('/api/stocktake/request/<int:request_id>/reject', methods=['POST'])
+@login_required
+def api_reject_request(request_id):
+    db = get_db()
+    req = db.execute('SELECT * FROM stocktake_product_requests WHERE id = %s', (request_id,)).fetchone()
+    if not req:
+        return jsonify({'success': False, 'message': 'الطلب غير موجود'}), 404
+    
+    db.execute('''
+        UPDATE stocktake_product_requests 
+        SET status = 'rejected', reviewed_by = %s, reviewed_at = NOW()
+        WHERE id = %s
+    ''', (session['user_id'], request_id))
+    db.commit()
+    
+    return jsonify({'success': True, 'message': 'تم رفض الطلب'})
+
+@app.route('/api/stocktake/request/<int:request_id>/edit', methods=['POST'])
+@login_required
+def api_edit_request(request_id):
+    db = get_db()
+    req = db.execute('SELECT * FROM stocktake_product_requests WHERE id = %s', (request_id,)).fetchone()
+    if not req:
+        return jsonify({'success': False, 'message': 'الطلب غير موجود'}), 404
+    
+    if req['status'] != 'pending':
+        return jsonify({'success': False, 'message': 'لا يمكن تعديل طلب تم معالجته'}), 400
+    
+    data = request.get_json() or {}
+    
+    db.execute('''
+        UPDATE stocktake_product_requests SET
+            product_name = %s, category_id = %s, unit = %s,
+            quantity_counted = %s, pack_size = %s,
+            cost_price = %s, sell_price = %s,
+            production_date = %s, expiry_date = %s,
+            batch_no = %s, notes = %s
+        WHERE id = %s
+    ''', (
+        data.get('product_name') or req['product_name'],
+        data.get('category_id') or req['category_id'],
+        data.get('unit') or req['unit'],
+        Decimal(str(data.get('quantity_counted') or req['quantity_counted'] or 1)),
+        int(data.get('pack_size') or req['pack_size'] or 1),
+        Decimal(str(data['cost_price'])) if data.get('cost_price') else req['cost_price'],
+        Decimal(str(data['sell_price'])) if data.get('sell_price') else req['sell_price'],
+        data.get('production_date') or req['production_date'],
+        data.get('expiry_date') or req['expiry_date'],
+        data.get('batch_no') or req['batch_no'],
+        data.get('notes') or req['notes'],
+        request_id
+    ))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم تعديل الطلب'})
+
+@app.route('/api/stocktake/request/<int:request_id>/link', methods=['POST'])
+@login_required
+def api_link_request(request_id):
+    db = get_db()
+    data = request.get_json() or {}
+    product_id = data.get('product_id')
+    
+    if not product_id:
+        return jsonify({'success': False, 'message': 'اختر الصنف المراد الربط به'}), 400
+    
+    req = db.execute('SELECT * FROM stocktake_product_requests WHERE id = %s', (request_id,)).fetchone()
+    if not req:
+        return jsonify({'success': False, 'message': 'الطلب غير موجود'}), 404
+    
+    product = db.execute('SELECT * FROM products WHERE id = %s', (product_id,)).fetchone()
+    if not product:
+        return jsonify({'success': False, 'message': 'الصنف غير موجود'}), 404
+    
+    # إضافة الباركود كوحدة جديدة للصنف
+    db.execute('''
+        INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, cost_price, sell_price)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    ''', (product_id, req['barcode'], req['unit'] or 'حبه', req['pack_size'] or 1, req['cost_price'], req['sell_price']))
+    
+    db.execute('''
+        UPDATE stocktake_product_requests 
+        SET status = 'approved', reviewed_by = %s, reviewed_at = NOW()
+        WHERE id = %s
+    ''', (session['user_id'], request_id))
+    db.commit()
+    
+    return jsonify({'success': True, 'message': f'تم ربط الباركود بالصنف: {product["name"]}'})
+
+@app.route('/api/products/search')
+@login_required
+def api_products_search():
+    db = get_db()
+    q = (request.args.get('q') or '').strip()
+    if len(q) < 2:
+        return jsonify({'products': []})
+    products = db.execute('''
+        SELECT id, name, barcode, unit, sell_price FROM products 
+        WHERE is_active = TRUE AND (name ILIKE %s OR barcode ILIKE %s)
+        ORDER BY name LIMIT 20
+    ''', (f'%{q}%', f'%{q}%')).fetchall()
+    
+    def safe(row):
+        d = dict(row)
+        for k,v in d.items():
+            if isinstance(v, Decimal):
+                d[k] = str(v)
+        return d
+    
+    return jsonify({'products': [safe(p) for p in products]})
+
+@app.route('/stocktake/review/<int:session_id>')
+@login_required
+def stocktake_session_detail(session_id):
+    db = get_db()
+    
+    stocktake_session = db.execute('SELECT s.*, u.username as created_by_name FROM stocktake_sessions s LEFT JOIN users u ON u.id = s.created_by WHERE s.id = %s', (session_id,)).fetchone()
+    if not stocktake_session:
+        return "جلسة الجرد غير موجودة", 404
+    
+    items = db.execute('''
+        SELECT si.*, p.name as product_name_db, c.name as category_name
+        FROM stocktake_items si
+        LEFT JOIN products p ON p.id = si.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        ORDER BY si.id DESC
+    ''').fetchall()
+    items = [i for i in items if i['session_id'] == session_id]
+    
+    requests = db.execute('''
+        SELECT r.*, c.name as category_name
+        FROM stocktake_product_requests r
+        LEFT JOIN categories c ON c.id = r.category_id
+        WHERE r.session_id = %s
+        ORDER BY r.id DESC
+    ''', (session_id,)).fetchall()
+    
+    return render_template('stocktake_session_detail.html', stocktake_session=stocktake_session, items=items, requests=requests)
+
+@app.route('/stocktake/export/<int:session_id>')
+@login_required
+def stocktake_export_excel(session_id):
+    db = get_db()
+    
+    stocktake_session = db.execute('SELECT * FROM stocktake_sessions WHERE id = %s', (session_id,)).fetchone()
+    if not stocktake_session:
+        return "جلسة الجرد غير موجودة", 404
+    
+    items = db.execute('''
+        SELECT si.*, p.name as product_name_db, c.name as category_name
+        FROM stocktake_items si
+        LEFT JOIN products p ON p.id = si.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE si.session_id = %s
+        ORDER BY si.id
+    ''', (session_id,)).fetchall()
+    
+    requests_list = db.execute('''
+        SELECT r.*, c.name as category_name
+        FROM stocktake_product_requests r
+        LEFT JOIN categories c ON c.id = r.category_id
+        WHERE r.session_id = %s
+        ORDER BY r.id
+    ''', (session_id,)).fetchall()
+    
+    # إنشاء ملف Excel
+    wb = openpyxl.Workbook()
+    
+    # تنسيقات
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    header_fill = PatternFill(start_color='6366F1', end_color='6366F1', fill_type='solid')
+    header_align = Alignment(horizontal='center', vertical='center')
+    cell_align = Alignment(horizontal='right', vertical='center')
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # ورقة الأصناف المسجلة
+    ws_items = wb.active
+    ws_items.title = 'الأصناف المسجلة'
+    ws_items.sheet_view.rightToLeft = True
+    
+    items_headers = ['#', 'اسم الصنف', 'الباركود', 'القسم', 'الوحدة', 'العبوة', 'الكمية', 'الباتش', 'تاريخ الإنتاج', 'تاريخ الانتهاء', 'ملاحظة']
+    for col, header in enumerate(items_headers, 1):
+        cell = ws_items.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+        cell.border = thin_border
+    
+    for row_idx, item in enumerate(items, 2):
+        row_data = [
+            row_idx - 1,
+            item['product_name'] or item['product_name_db'] or '',
+            item['barcode'] or '',
+            item['category_name'] or '',
+            item['selected_unit'] or item['unit'] or '',
+            item['pack_size'] or 1,
+            float(item['counted_stock'] or 0),
+            item['batch_no'] or '',
+            item['production_date'].strftime('%Y-%m-%d') if item['production_date'] else '',
+            item['expiry_date'].strftime('%Y-%m-%d') if item['expiry_date'] else '',
+            item['notes'] or ''
+        ]
+        for col, value in enumerate(row_data, 1):
+            cell = ws_items.cell(row=row_idx, column=col, value=value)
+            cell.alignment = cell_align
+            cell.border = thin_border
+    
+    # تعديل عرض الأعمدة
+    ws_items.column_dimensions['A'].width = 5
+    ws_items.column_dimensions['B'].width = 40
+    ws_items.column_dimensions['C'].width = 18
+    ws_items.column_dimensions['D'].width = 20
+    ws_items.column_dimensions['E'].width = 12
+    ws_items.column_dimensions['F'].width = 10
+    ws_items.column_dimensions['G'].width = 10
+    ws_items.column_dimensions['H'].width = 15
+    ws_items.column_dimensions['I'].width = 14
+    ws_items.column_dimensions['J'].width = 14
+    ws_items.column_dimensions['K'].width = 30
+    
+    # ورقة الطلبات غير الموجودة
+    if requests_list:
+        ws_requests = wb.create_sheet('طلبات غير موجود')
+        ws_requests.sheet_view.rightToLeft = True
+        
+        req_headers = ['#', 'الباركود', 'اسم الصنف', 'القسم', 'الوحدة', 'الكمية', 'الحالة', 'ملاحظة']
+        for col, header in enumerate(req_headers, 1):
+            cell = ws_requests.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = PatternFill(start_color='F59E0B', end_color='F59E0B', fill_type='solid')
+            cell.alignment = header_align
+            cell.border = thin_border
+        
+        for row_idx, req in enumerate(requests_list, 2):
+            row_data = [
+                row_idx - 1,
+                req['barcode'] or '',
+                req['product_name'] or '',
+                req['category_name'] or '',
+                req['unit'] or '',
+                float(req['quantity_counted'] or 1),
+                req['status'] or 'pending',
+                req['notes'] or ''
+            ]
+            for col, value in enumerate(row_data, 1):
+                cell = ws_requests.cell(row=row_idx, column=col, value=value)
+                cell.alignment = cell_align
+                cell.border = thin_border
+        
+        ws_requests.column_dimensions['A'].width = 5
+        ws_requests.column_dimensions['B'].width = 18
+        ws_requests.column_dimensions['C'].width = 40
+        ws_requests.column_dimensions['D'].width = 20
+        ws_requests.column_dimensions['E'].width = 12
+        ws_requests.column_dimensions['F'].width = 10
+        ws_requests.column_dimensions['G'].width = 12
+        ws_requests.column_dimensions['H'].width = 30
+    
+    # حفظ في buffer
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"stocktake_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
+@app.route('/api/stocktake/edit-request', methods=['POST'])
+@login_required
+def api_stocktake_edit_request():
+    db = get_db()
+    data = request.get_json() or {}
+    
+    product_id = data.get('product_id')
+    if not product_id:
+        return jsonify({'success': False, 'message': 'الصنف مطلوب'}), 400
+    
+    details = (data.get('details') or '').strip()
+    if not details:
+        return jsonify({'success': False, 'message': 'تفاصيل التعديل مطلوبة'}), 400
+    
+    db.execute('''
+        INSERT INTO stocktake_edit_requests (session_id, product_id, product_name, barcode, request_type, details, requested_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    ''', (
+        data.get('session_id'), product_id,
+        data.get('product_name') or '', data.get('barcode') or '',
+        data.get('request_type') or 'edit', details, session['user_id']
+    ))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم رفع طلب تعديل الصنف للمراجعة'})
+
+@app.route('/api/stocktake/edit-request/<int:request_id>/done', methods=['POST'])
+@login_required
+def api_edit_request_done(request_id):
+    db = get_db()
+    db.execute('UPDATE stocktake_edit_requests SET status = %s, reviewed_by = %s, reviewed_at = NOW() WHERE id = %s',
+               ('done', session['user_id'], request_id))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم تأكيد التعديل'})
+
+@app.route('/api/stocktake/edit-request/<int:request_id>/reject', methods=['POST'])
+@login_required
+def api_edit_request_reject(request_id):
+    db = get_db()
+    db.execute('UPDATE stocktake_edit_requests SET status = %s, reviewed_by = %s, reviewed_at = NOW() WHERE id = %s',
+               ('rejected', session['user_id'], request_id))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم رفض الطلب'})
+
+@app.route('/api/stocktake/scan', methods=['POST'])
+@login_required
+def api_stocktake_scan():
+    db = get_db()
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+    barcode = (data.get('barcode') or '').strip()
+
+    if not session_id or not barcode:
+        return jsonify({'success': False, 'message': 'بيانات ناقصة'}), 400
+
+    stocktake_session = db.execute('SELECT * FROM stocktake_sessions WHERE id = %s AND status = %s', (session_id, 'open')).fetchone()
+    if not stocktake_session:
+        return jsonify({'success': False, 'message': 'جلسة الجرد غير موجودة أو مغلقة'}), 400
+
+    try:
+        lookup = api_barcode_lookup(barcode)
+        result = lookup.get_json()
+    except Exception as e:
+        return jsonify({'success': True, 'found': False, 'barcode': barcode, 'error': str(e)})
+    
+    if not result.get('found'):
+        return jsonify({'success': True, 'found': False, 'barcode': barcode})
+
+    product = result['product']
+    units = []
+    base_unit = product.get('unit') or 'حبه'
+    units.append({
+        'unit': base_unit,
+        'barcode': product.get('barcode') or barcode,
+        'pack_size': 1,
+        'conversion_factor': 1,
+        'cost_price': str(product.get('cost_price') or 0),
+        'sell_price': str(product.get('sell_price') or product.get('price') or 0),
+        'is_sale': True,
+        'is_purchase': False
+    })
+
+    extra_units = db.execute('''
+        SELECT unit, barcode, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale
+        FROM product_barcodes
+        WHERE product_id = %s
+        ORDER BY sort_order, conversion_factor, pack_size
+    ''', (product['id'],)).fetchall()
+    seen = {(base_unit, product.get('barcode') or barcode)}
+    for u in extra_units:
+        key = (u.get('unit') or '', u.get('barcode') or '')
+        if key not in seen:
+            units.append({
+                'unit': u.get('unit') or 'حبه',
+                'barcode': u.get('barcode') or '',
+                'pack_size': u.get('pack_size') or 1,
+                'conversion_factor': u.get('conversion_factor') or u.get('pack_size') or 1,
+                'cost_price': str(u.get('cost_price') or 0),
+                'sell_price': str(u.get('sell_price') or 0),
+                'is_purchase': u.get('is_purchase', False),
+                'is_sale': u.get('is_sale', True)
+            })
+            seen.add(key)
+
+    return jsonify({'success': True, 'found': True, 'product': product, 'units': units})
+
+@app.route('/api/stocktake/save-item', methods=['POST'])
+@login_required
+def api_stocktake_save_item():
+    db = get_db()
+    try:
+        session_id = int(request.form.get('session_id') or 0)
+        product_id = int(request.form.get('product_id') or 0)
+        barcode = (request.form.get('barcode') or '').strip()
+        product_name = (request.form.get('product_name') or '').strip()
+        selected_unit = (request.form.get('selected_unit') or '').strip() or None
+        pack_size = int(request.form.get('pack_size') or 1)
+        counted_stock = Decimal(str(request.form.get('counted_stock') or 1))
+        production_date = request.form.get('production_date') or None
+        expiry_date = request.form.get('expiry_date') or None
+        batch_no = (request.form.get('batch_no') or '').strip() or None
+        notes = (request.form.get('notes') or '').strip() or None
+        expected_stock = Decimal(str(request.form.get('expected_stock') or 0))
+
+        if not session_id or not product_id:
+            return jsonify({'success': False, 'message': 'بيانات ناقصة'}), 400
+
+        if not production_date:
+            return jsonify({'success': False, 'message': 'تاريخ الإنتاج مطلوب'}), 400
+
+        if not expiry_date:
+            return jsonify({'success': False, 'message': 'تاريخ الانتهاء مطلوب'}), 400
+
+        # التحقق من عدم تكرار الصنف في نفس الجلسة
+        existing = db.execute('''
+            SELECT id, counted_stock, selected_unit, batch_no FROM stocktake_items 
+            WHERE session_id = %s AND product_id = %s
+        ''', (session_id, product_id)).fetchone()
+        
+        if existing:
+            return jsonify({
+                'success': False, 
+                'message': f'الصنف مسجل مسبقًا في هذه الجلسة (الكمية: {existing["counted_stock"]}, الوحدة: {existing["selected_unit"] or "-"}, الباتش: {existing["batch_no"] or "-"})',
+                'duplicate': True,
+                'existing_id': existing['id']
+            }), 400
+
+        image_path = None
+        attachment_path = None
+        voice_note_path = None
+        for field, prefix in [('image', 'stocktake_item_image'), ('attachment', 'stocktake_item_attachment'), ('voice_note', 'stocktake_item_voice')]:
+            file = request.files.get(field)
+            if file and file.filename:
+                ext = os.path.splitext(secure_filename(file.filename))[1] or ('.webm' if field == 'voice_note' else '.jpg')
+                fname = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
+                rel = os.path.join('static', 'uploads', fname).replace('\\', '/')
+                full = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+                file.save(full)
+                if field == 'image':
+                    image_path = rel
+                elif field == 'attachment':
+                    attachment_path = rel
+                elif field == 'voice_note':
+                    voice_note_path = rel
+
+        db.execute('''
+            INSERT INTO stocktake_items (
+                session_id, product_id, barcode, product_name, unit, selected_unit,
+                pack_size, expected_stock, counted_stock, scan_count, created_by,
+                production_date, expiry_date, batch_no, notes, image_path, attachment_path, voice_note_path
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            session_id, product_id, barcode, product_name, selected_unit, selected_unit,
+            pack_size, expected_stock, counted_stock, session['user_id'],
+            production_date, expiry_date, batch_no, notes, image_path, attachment_path, voice_note_path
+        ))
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم حفظ الصنف في الجرد', 'voice_note_path': voice_note_path or ''})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل الحفظ: {str(e)}'}), 500
+
+@app.route('/api/stocktake/request-product', methods=['POST'])
+@login_required
+def api_stocktake_request_product():
+    db = get_db()
+    session_id = request.form.get('session_id')
+    barcode = (request.form.get('barcode') or '').strip()
+    product_name = (request.form.get('product_name') or '').strip()
+    category_id = request.form.get('category_id') or None
+    unit = (request.form.get('unit') or '').strip() or None
+    notes = (request.form.get('notes') or '').strip() or None
+    pack_size = request.form.get('pack_size') or 1
+    quantity_counted = Decimal(str(request.form.get('quantity_counted') or 1))
+    production_date = request.form.get('production_date') or None
+    expiry_date = request.form.get('expiry_date') or None
+    batch_no = (request.form.get('batch_no') or '').strip() or None
+    cost_price = request.form.get('cost_price') or None
+    sell_price = request.form.get('sell_price') or None
+
+    def clean_text(v):
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            v = str(v)
+        return v.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore').strip() or None
+
+    barcode = clean_text(barcode) or ''
+    product_name = clean_text(product_name) or ''
+    unit = clean_text(unit)
+    notes = clean_text(notes)
+    batch_no = clean_text(batch_no)
+
+    if not barcode:
+        return jsonify({'success': False, 'message': 'الباركود مطلوب'}), 400
+
+    image_path = None
+    attachment_path = None
+    for field, prefix in [('image', 'stocktake_image'), ('attachment', 'stocktake_attachment')]:
+        file = request.files.get(field)
+        if file and file.filename:
+            ext = os.path.splitext(secure_filename(file.filename))[1] or '.jpg'
+            fname = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
+            rel = os.path.join('uploads', fname).replace('\\', '/')
+            full = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+            file.save(full)
+            if field == 'image':
+                image_path = rel
+            else:
+                attachment_path = rel
+
+    db.execute('''
+        INSERT INTO stocktake_product_requests (
+            session_id, barcode, product_name, category_id, unit, notes,
+            image_path, attachment_path, status, requested_by,
+            pack_size, quantity_counted, production_date, expiry_date, batch_no, cost_price, sell_price
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s)
+    ''', (
+        session_id or None, barcode, product_name or None, category_id, unit, notes,
+        image_path, attachment_path, session['user_id'],
+        pack_size, quantity_counted, production_date, expiry_date, batch_no,
+        Decimal(str(cost_price)) if cost_price else None,
+        Decimal(str(sell_price)) if sell_price else None
+    ))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم رفع طلب إضافة الصنف للمراجعة'})
+
 @app.route('/api/barcode/<barcode>')
 @login_required
 def api_barcode_lookup(barcode):
     db = get_db()
+    barcode = (barcode or '').strip()
+    
+    # تجهيز نسخ بديلة من الباركود (مع/بدون أصفار بادئة)
+    barcode_variants = [barcode]
+    if barcode.startswith('0'):
+        barcode_variants.append(barcode.lstrip('0'))
+    else:
+        barcode_variants.append('0' + barcode)
+    
+    def to_json_safe(row):
+        if row is None:
+            return None
+        d = {}
+        for k, v in dict(row).items():
+            if isinstance(v, Decimal):
+                d[k] = str(v)
+            elif hasattr(v, 'isoformat'):
+                d[k] = v.isoformat()
+            else:
+                d[k] = v
+        return d
     
     # البحث في الأصناف (الباركود الرئيسي)
-    product = db.execute('''
-        SELECT p.*, c.name as category_name,
-               p.sell_price as price
-        FROM products p
-        LEFT JOIN categories c ON c.id = p.category_id
-        WHERE p.barcode = %s AND p.is_active = TRUE
-    ''', (barcode,)).fetchone()
+    for bc in barcode_variants:
+        product = db.execute('''
+            SELECT p.*, c.name as category_name,
+                   p.sell_price as price
+            FROM products p
+            LEFT JOIN categories c ON c.id = p.category_id
+            WHERE p.barcode = %s AND p.is_active = TRUE
+        ''', (bc,)).fetchone()
+        if product:
+            return jsonify({'found': True, 'product': to_json_safe(product)})
     
-    if product:
-        return jsonify({'found': True, 'product': dict(product)})
-    
-    # البحث في وحدات الأصناف
-    product_unit = db.execute('''
-        SELECT p.*, c.name as category_name, pu.price, pu.barcode as unit_barcode
-        FROM product_units pu
-        JOIN products p ON p.id = pu.product_id
-        LEFT JOIN categories c ON c.id = p.category_id
-        WHERE pu.barcode = %s AND p.is_active = TRUE
-    ''', (barcode,)).fetchone()
-    
-    if product_unit:
-        return jsonify({'found': True, 'product': dict(product_unit)})
-    
-    # البحث في جدول الباركودات المتعددة
-    multi_barcode = db.execute('''
-        SELECT p.*, c.name as category_name,
-               pb.unit as barcode_unit, pb.pack_size as barcode_pack_size,
-               pb.cost_price as barcode_cost, pb.sell_price as barcode_sell
-        FROM product_barcodes pb
-        JOIN products p ON p.id = pb.product_id
-        LEFT JOIN categories c ON c.id = p.category_id
-        WHERE pb.barcode = %s AND p.is_active = TRUE
-    ''', (barcode,)).fetchone()
-    
+    # البحث في جدول الباركودات المتعددة (وحدات إضافية)
+    multi_barcode = None
+    for bc in barcode_variants:
+        multi_barcode = db.execute('''
+            SELECT p.*, c.name as category_name,
+                   pb.unit as barcode_unit, pb.pack_size as barcode_pack_size,
+                   pb.cost_price as barcode_cost, pb.sell_price as barcode_sell,
+                   pb.barcode as matched_barcode
+            FROM product_barcodes pb
+            JOIN products p ON p.id = pb.product_id
+            LEFT JOIN categories c ON c.id = p.category_id
+            WHERE pb.barcode = %s AND p.is_active = TRUE
+        ''', (bc,)).fetchone()
+        if multi_barcode:
+            break
+
     if multi_barcode:
-        result = dict(multi_barcode)
-        # Use barcode-specific price and unit
-        result['unit'] = result.pop('barcode_unit', result.get('unit'))
-        result['pack_size'] = result.pop('barcode_pack_size', 1)
+        result = to_json_safe(multi_barcode)
+        result['barcode'] = result.get('matched_barcode') or barcode
+        result['unit'] = result.get('barcode_unit') or result.get('unit')
+        result['pack_size'] = result.get('barcode_pack_size') or 1
         if result.get('barcode_sell'):
-            result['sell_price'] = result.pop('barcode_sell')
+            result['sell_price'] = result['barcode_sell']
             result['price'] = result['sell_price']
         if result.get('barcode_cost'):
-            result['cost_price'] = result.pop('barcode_cost')
+            result['cost_price'] = result['barcode_cost']
         return jsonify({'found': True, 'product': result, 'source': 'barcode_unit'})
     
+    # البحث في وحدات الأصناف القديمة
+    product_unit = None
+    for bc in barcode_variants:
+        product_unit = db.execute('''
+            SELECT p.*, c.name as category_name, pu.sell_price as price, pu.barcode as unit_barcode, pu.unit_name as pu_unit
+            FROM product_units pu
+            JOIN products p ON p.id = pu.product_id
+            LEFT JOIN categories c ON c.id = p.category_id
+            WHERE pu.barcode = %s AND p.is_active = TRUE
+        ''', (bc,)).fetchone()
+        if product_unit:
+            break
+    
+    if product_unit:
+        result = to_json_safe(product_unit)
+        if result.get('pu_unit'):
+            result['unit'] = result['pu_unit']
+        return jsonify({'found': True, 'product': result})
+    
     # البحث في أصناف الموردين
-    supplier_product = db.execute('''
-        SELECT sp.*, p.name, p.id as product_id, p.current_stock, p.unit,
-               c.name as category_name, s.name as supplier_name
-        FROM supplier_products sp
-        JOIN products p ON p.id = sp.product_id
-        LEFT JOIN categories c ON c.id = p.category_id
-        LEFT JOIN suppliers s ON s.id = sp.supplier_id
-        WHERE sp.supplier_barcode = %s AND sp.is_active = TRUE
-    ''', (barcode,)).fetchone()
+    supplier_product = None
+    for bc in barcode_variants:
+        supplier_product = db.execute('''
+            SELECT sp.*, p.name, p.id as product_id, p.current_stock, p.unit,
+                   c.name as category_name, s.name as supplier_name
+            FROM supplier_products sp
+            JOIN products p ON p.id = sp.product_id
+            LEFT JOIN categories c ON c.id = p.category_id
+            LEFT JOIN suppliers s ON s.id = sp.supplier_id
+            WHERE sp.supplier_barcode = %s AND sp.is_active = TRUE
+        ''', (bc,)).fetchone()
+        if supplier_product:
+            break
     
     if supplier_product:
-        return jsonify({'found': True, 'product': dict(supplier_product), 'source': 'supplier'})
+        return jsonify({'found': True, 'product': to_json_safe(supplier_product), 'source': 'supplier'})
     
     return jsonify({'found': False})
 
@@ -2495,7 +3640,32 @@ def api_products():
             data.get('pack_size', 1), data.get('cost_price', 0), data.get('sell_price', 0),
             data.get('min_stock', 0), data.get('notes')
         ))
-        product_id = cursor.lastrowid
+        product_id = db.execute('SELECT lastval()').fetchone()[0]
+        
+        # حفظ الوحدات الإضافية (product_barcodes)
+        extra_units = data.get('extra_units', [])
+        for idx, eu in enumerate(extra_units):
+            if eu.get('unit'):
+                main_bc = eu.get('barcodes', [eu.get('barcode', '')])[0] if eu.get('barcodes') or eu.get('barcode') else ''
+                pb_row = db.execute('''
+                    INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale, sort_order)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                ''', (product_id, main_bc, eu['unit'],
+                      int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
+                      int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
+                      Decimal(str(eu.get('cost_price') or 0)),
+                      Decimal(str(eu.get('sell_price') or 0)),
+                      eu.get('is_purchase', True),
+                      eu.get('is_sale', False),
+                      idx + 2
+                )).fetchone()
+                # Save extra barcodes
+                if pb_row:
+                    for bc in eu.get('barcodes', []):
+                        if bc:
+                            db.execute('INSERT INTO unit_barcodes (product_barcode_id, barcode, is_primary) VALUES (%s, %s, %s)',
+                                      (pb_row['id'], bc, bc == main_bc))
         
         # حفظ الوحدات
         units = data.get('units', [])
@@ -2540,7 +3710,34 @@ def api_product(id):
             data.get('min_stock', 0), data.get('notes'), id
         ))
         
-        # تحديث الوحدات
+        # تحديث الوحدات الإضافية (product_barcodes)
+        extra_units = data.get('extra_units')
+        if extra_units is not None:
+            db.execute('DELETE FROM unit_barcodes WHERE product_barcode_id IN (SELECT id FROM product_barcodes WHERE product_id = %s)', (id,))
+            db.execute('DELETE FROM product_barcodes WHERE product_id = %s', (id,))
+            for idx, eu in enumerate(extra_units):
+                if eu.get('unit'):
+                    main_bc = eu.get('barcodes', [''])[0] if eu.get('barcodes') else ''
+                    pb_row = db.execute('''
+                        INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale, sort_order)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                    ''', (id, main_bc, eu['unit'],
+                          int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
+                          int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
+                          Decimal(str(eu.get('cost_price') or 0)),
+                          Decimal(str(eu.get('sell_price') or 0)),
+                          eu.get('is_purchase', True),
+                          eu.get('is_sale', False),
+                          idx + 2
+                    )).fetchone()
+                    if pb_row:
+                        for bc in eu.get('barcodes', []):
+                            if bc:
+                                db.execute('INSERT INTO unit_barcodes (product_barcode_id, barcode, is_primary) VALUES (%s, %s, %s)',
+                                          (pb_row['id'], bc, bc == main_bc))
+        
+        # تحديث الوحدات القديمة
         units = data.get('units', [])
         if units:
             # حذف الوحدات القديمة وإضافة الجديدة
@@ -3630,14 +4827,14 @@ def api_backup():
 # تشغيل التطبيق
 # ═══════════════════════════════════════════════════════════════
 
-def generate_ssl_cert():
-    """إنشاء شهادة SSL ذاتية التوقيع"""
+def generate_ssl_cert(force=False):
+    """إنشاء شهادة SSL ذاتية التوقيع مع SAN"""
     from OpenSSL import crypto
     
     cert_file = 'cert.pem'
     key_file = 'key.pem'
     
-    if os.path.exists(cert_file) and os.path.exists(key_file):
+    if not force and os.path.exists(cert_file) and os.path.exists(key_file):
         return cert_file, key_file
     
     # إنشاء مفتاح
@@ -3652,14 +4849,21 @@ def generate_ssl_cert():
     cert.get_subject().O = "Supermarket"
     cert.get_subject().OU = "IT"
     cert.get_subject().CN = "localhost"
-    cert.set_serial_number(1000)
+    cert.set_serial_number(2000)
     cert.gmtime_adj_notBefore(0)
-    cert.gmtime_adj_notAfter(365*24*60*60)  # سنة واحدة
+    cert.gmtime_adj_notAfter(365*24*60*60)
     cert.set_issuer(cert.get_subject())
     cert.set_pubkey(key)
+    
+    # إضافة SAN لدعم IP والميكروفون
+    san = b"DNS:localhost,IP:127.0.0.1,IP:192.168.8.38"
+    cert.add_extensions([
+        crypto.X509Extension(b"subjectAltName", False, san),
+        crypto.X509Extension(b"basicConstraints", True, b"CA:TRUE"),
+    ])
+    
     cert.sign(key, 'sha256')
     
-    # حفظ الملفات
     with open(cert_file, "wb") as f:
         f.write(crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
     with open(key_file, "wb") as f:

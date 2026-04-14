@@ -1,6 +1,9 @@
 {% extends 'base.html' %}
 
 {% block title %}الأصناف - نظام إدارة السوبرماركت{% endblock %}
+{% block head %}
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+{% endblock %}
 
 {% block page_title %}الأصناف{% endblock %}
 {% block page_subtitle %}إدارة أصناف السوبرماركت ({{ total }} صنف){% endblock %}
@@ -175,73 +178,123 @@
 <div id="productModal" class="fixed inset-0 z-50 hidden overflow-y-auto">
     <div class="fixed inset-0 bg-black/50" onclick="closeModal()"></div>
     <div class="min-h-full flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg relative my-8">
-            <div class="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h3 id="modalTitle" class="text-xl font-bold text-gray-800 dark:text-gray-100">إضافة صنف جديد</h3>
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl relative my-8">
+            <div class="p-5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-t-2xl">
+                <h3 id="modalTitle" class="text-xl font-bold text-white">إضافة صنف جديد</h3>
             </div>
-            <form id="productForm" onsubmit="saveProduct(event)" class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+            <form id="productForm" onsubmit="saveProduct(event)" class="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
                 <input type="hidden" id="productId" value="">
                 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">اسم الصنف *</label>
-                    <input type="text" id="productName" required
-                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-indigo-500">
-                </div>
-                
-                <div class="grid grid-cols-2 gap-4">
+                <!-- بيانات أساسية -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">اسم الصنف *</label>
+                        <input type="text" id="productName" required class="form-input">
+                    </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">العائلة</label>
-                        <input type="text" id="productBrand"
-                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">العائلة / الماركة</label>
+                        <input type="text" id="productBrand" class="form-input">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">كود الصنف</label>
-                        <input type="text" id="productCode" dir="ltr"
-                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl">
-                    </div>
-                </div>
-                
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الباركود</label>
-                        <input type="text" id="productBarcode" dir="ltr"
-                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl">
+                        <input type="text" id="productCode" dir="ltr" class="form-input font-mono">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">القسم</label>
-                        <select id="productCategory"
-                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl">
+                        <select id="productCategory" class="form-input">
                             <option value="">-- اختر --</option>
                             {% for category in categories %}
                             <option value="{{ category.id }}">{{ category.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
-                </div>
-                
-                <div class="grid grid-cols-3 gap-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الوحدة</label>
-                        <input type="text" id="productUnit" value="حبه"
-                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">التكلفة</label>
-                        <input type="number" id="productCostPrice" step="1" min="0" value="0"
-                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">البيع</label>
-                        <input type="number" id="productSellPrice" step="1" min="0" value="0"
-                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الحد الأدنى</label>
+                        <input type="number" id="productMinStock" step="1" min="0" value="0" class="form-input">
                     </div>
                 </div>
+
+                <!-- الوحدات الهرمية -->
+                <div class="border-2 border-indigo-200 dark:border-indigo-800 rounded-2xl overflow-hidden">
+                    <div class="p-4 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-200 dark:border-indigo-800">
+                        <div class="flex items-center justify-between">
+                            <h4 class="font-bold text-indigo-800 dark:text-indigo-300">📦 هيكل الوحدات</h4>
+                            <span class="text-xs text-indigo-500">من الأصغر (أساسية) إلى الأكبر (شراء)</span>
+                        </div>
+                    </div>
+                    
+                    <!-- الوحدة الأساسية -->
+                    <div class="p-4 bg-emerald-50/50 dark:bg-emerald-900/10 border-b border-gray-200 dark:border-gray-700">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">أساسية</span>
+                            <span class="text-sm text-gray-500">أصغر وحدة بيع = 1</span>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                            <div>
+                                <label class="text-xs text-gray-500">الوحدة</label>
+                                <select id="productUnit" class="form-input text-sm" onchange="updateAllUnitLabels()">
+                                    {% for u in units %}
+                                    <option value="{{ u.name }}" {{ 'selected' if u.name == 'حبه' }}>{{ u.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500">الباركود</label>
+                                <div class="flex gap-1">
+                                    <input type="text" id="productBarcode" dir="ltr" class="form-input text-sm font-mono flex-1">
+                                    <button type="button" onclick="scanBarcode('productBarcode')" class="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-lg hover:bg-indigo-200" title="مسح بالكاميرا">📷</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500">التكلفة</label>
+                                <input type="number" id="productCostPrice" step="1" min="0" value="0" class="form-input text-sm">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500">البيع</label>
+                                <input type="number" id="productSellPrice" step="1" min="0" value="0" class="form-input text-sm">
+                            </div>
+                            <div class="flex items-end gap-3 pb-1">
+                                <label class="flex items-center gap-1 text-xs"><input type="checkbox" id="baseIsSale" checked class="rounded"> بيع</label>
+                                <label class="flex items-center gap-1 text-xs"><input type="checkbox" id="baseIsPurchase" class="rounded"> شراء</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- وحدات إضافية -->
+                    <div id="productExtraUnits" class="divide-y divide-gray-200 dark:divide-gray-700"></div>
+                    
+                    <div class="p-3 bg-gray-50 dark:bg-gray-800/50">
+                        <button type="button" onclick="addProductUnit()" class="w-full py-2.5 rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 font-bold text-sm hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+                            ➕ إضافة وحدة أكبر (باكت، كرتون، شده...)
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ملاحظة</label>
+                    <input type="text" id="productNotes" class="form-input">
+                </div>
                 
-                <div class="flex gap-3 pt-4">
-                    <button type="submit" class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700">حفظ</button>
-                    <button type="button" onclick="closeModal()" class="flex-1 py-2.5 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl">إلغاء</button>
+                <div class="flex gap-3 pt-2">
+                    <button type="submit" class="flex-1 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-bold">💾 حفظ الصنف</button>
+                    <button type="button" onclick="closeModal()" class="flex-1 py-3 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl font-bold">إلغاء</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Camera Scanner Modal -->
+<div id="scannerModal" class="fixed inset-0 z-[60] hidden bg-black/80 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md overflow-hidden">
+        <div class="p-4 flex justify-between items-center border-b">
+            <h3 class="font-bold">📷 مسح الباركود</h3>
+            <button onclick="closeScannerModal()" class="text-xl text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div id="scannerReader" class="w-full"></div>
+        <div class="p-4">
+            <input type="text" id="scannerManualInput" class="form-input font-mono text-center text-lg" placeholder="أو أدخل الباركود يدوياً" onkeypress="if(event.key==='Enter'){applyScan();event.preventDefault();}">
+            <button onclick="applyScan()" class="w-full mt-2 py-2 bg-indigo-600 text-white rounded-xl font-bold">تطبيق</button>
         </div>
     </div>
 </div>
@@ -413,6 +466,223 @@ async function addUnit(e) {
     } catch(e) { alert('خطأ في الاتصال'); }
 }
 
+let pUnitCount = 0;
+let scanTargetInput = null;
+let scannerHtml5 = null;
+const pUnitOpts = `<option value="">-- اختر --</option>{% for u in units %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}`;
+
+function getPrevUnitName(n) {
+    // الوحدة السابقة (التي تحتها)
+    const allUnits = document.querySelectorAll('#productExtraUnits > div[id^="pUnit_"]');
+    if (allUnits.length === 0 || n === 1) {
+        return document.getElementById('productUnit').value || 'الأساسية';
+    }
+    // Find the unit before this one
+    for (let i = 0; i < allUnits.length; i++) {
+        if (allUnits[i].id === 'pUnit_' + n && i > 0) {
+            return allUnits[i-1].querySelector('.pu-unit')?.value || 'السابقة';
+        }
+    }
+    return document.getElementById('productUnit').value || 'الأساسية';
+}
+
+function updateAllUnitLabels() {
+    const allUnits = document.querySelectorAll('#productExtraUnits > div[id^="pUnit_"]');
+    allUnits.forEach((div, idx) => {
+        const label = div.querySelector('.pu-conv-label');
+        let prevName;
+        if (idx === 0) {
+            prevName = document.getElementById('productUnit').value || 'الأساسية';
+        } else {
+            prevName = allUnits[idx-1].querySelector('.pu-unit')?.value || 'السابقة';
+        }
+        if (label) label.textContent = `= كم ${prevName}`;
+        
+        const levelLabel = div.querySelector('.pu-level');
+        if (levelLabel) levelLabel.textContent = `المستوى ${idx + 2}`;
+    });
+    recalcTotals();
+}
+
+function recalcTotals() {
+    // حساب إجمالي التحويل لكل وحدة إلى الأساسية
+    const allUnits = document.querySelectorAll('#productExtraUnits > div[id^="pUnit_"]');
+    let cumulativeFactor = 1;
+    allUnits.forEach((div) => {
+        const conv = parseInt(div.querySelector('.pu-conv')?.value) || 1;
+        cumulativeFactor *= conv;
+        const totalLabel = div.querySelector('.pu-total');
+        const baseUnit = document.getElementById('productUnit').value || 'الأساسية';
+        if (totalLabel) totalLabel.textContent = `= ${cumulativeFactor} ${baseUnit}`;
+    });
+}
+
+function addProductUnit(unit='', barcode='', conv='1', cost='', sell='', isPurchase=true, isSale=false, extraBarcodes=[]) {
+    pUnitCount++;
+    const n = pUnitCount;
+    const div = document.createElement('div');
+    div.className = 'p-4 bg-white dark:bg-gray-800';
+    div.id = 'pUnit_' + n;
+    
+    const allExisting = document.querySelectorAll('#productExtraUnits > div[id^="pUnit_"]');
+    const level = allExisting.length + 2;
+    let prevUnitName;
+    if (allExisting.length === 0) {
+        prevUnitName = document.getElementById('productUnit').value || 'الأساسية';
+    } else {
+        prevUnitName = allExisting[allExisting.length - 1].querySelector('.pu-unit')?.value || 'السابقة';
+    }
+    
+    div.innerHTML = `
+        <div class="flex items-center gap-2 mb-3">
+            <span class="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 text-[10px] font-bold pu-level">المستوى ${level}</span>
+            <span class="text-xs text-emerald-600 font-bold pu-total"></span>
+            <button type="button" onclick="document.getElementById('pUnit_${n}').remove(); updateAllUnitLabels();" class="mr-auto text-red-400 hover:text-red-600 text-sm">🗑️ حذف</button>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div>
+                <label class="text-xs text-gray-500">الوحدة</label>
+                <select class="form-input text-sm pu-unit" onchange="updateAllUnitLabels()">${pUnitOpts}</select>
+            </div>
+            <div>
+                <label class="text-xs text-gray-500 pu-conv-label">= كم ${prevUnitName}</label>
+                <input type="number" class="form-input text-sm pu-conv" min="1" value="${conv}" oninput="recalcTotals()">
+            </div>
+            <div>
+                <label class="text-xs text-gray-500">التكلفة</label>
+                <input type="number" class="form-input text-sm pu-cost" min="0" step="1" value="${cost}">
+            </div>
+            <div>
+                <label class="text-xs text-gray-500">البيع</label>
+                <input type="number" class="form-input text-sm pu-sell" min="0" step="1" value="${sell}">
+            </div>
+            <div class="flex items-end gap-3 pb-1">
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" class="rounded pu-purchase" ${isPurchase?'checked':''}> شراء</label>
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" class="rounded pu-sale" ${isSale?'checked':''}> بيع</label>
+            </div>
+        </div>
+        <div class="mt-2">
+            <label class="text-xs text-gray-500">باركودات هذه الوحدة</label>
+            <div class="pu-barcodes space-y-1 mt-1"></div>
+            <button type="button" onclick="addUnitBarcode(${n})" class="mt-1 px-3 py-1 text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 rounded-lg">➕ إضافة باركود</button>
+        </div>
+    `;
+    document.getElementById('productExtraUnits').appendChild(div);
+    if (unit) div.querySelector('.pu-unit').value = unit;
+    
+    if (barcode) addUnitBarcode(n, barcode, true);
+    extraBarcodes.forEach(b => addUnitBarcode(n, b, false));
+    
+    updateAllUnitLabels();
+}
+
+let bcInputCounter = 0;
+function addUnitBarcode(unitNum, barcode, isPrimary) {
+    barcode = barcode || '';
+    isPrimary = isPrimary || false;
+    const container = document.getElementById('pUnit_' + unitNum);
+    if (!container) return;
+    const barcodeBox = container.querySelector('.pu-barcodes');
+    if (!barcodeBox) return;
+    bcInputCounter++;
+    const inputId = 'bcInput_' + bcInputCounter;
+    
+    const row = document.createElement('div');
+    row.className = 'flex gap-1 items-center';
+    
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.id = inputId;
+    inp.className = 'form-input text-sm font-mono flex-1 bc-val';
+    inp.dir = 'ltr';
+    inp.value = barcode;
+    inp.placeholder = 'الباركود';
+    
+    const camBtn = document.createElement('button');
+    camBtn.type = 'button';
+    camBtn.className = 'px-3 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-lg hover:bg-indigo-200';
+    camBtn.title = 'مسح بالكاميرا';
+    camBtn.textContent = '📷';
+    camBtn.addEventListener('click', function() { scanBarcode(inputId); });
+    
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'text-red-400 hover:text-red-600 text-lg px-1';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', function() { row.remove(); });
+    
+    row.appendChild(inp);
+    row.appendChild(camBtn);
+    if (isPrimary) {
+        const badge = document.createElement('span');
+        badge.className = 'text-[10px] text-emerald-600 font-bold';
+        badge.textContent = 'رئيسي';
+        row.appendChild(badge);
+    }
+    row.appendChild(delBtn);
+    barcodeBox.appendChild(row);
+}
+
+function getProductExtraUnits() {
+    const units = [];
+    let cumulativeFactor = 1;
+    document.querySelectorAll('#productExtraUnits > div[id^="pUnit_"]').forEach(div => {
+        const unit = div.querySelector('.pu-unit')?.value;
+        if (!unit) return;
+        const localConv = parseInt(div.querySelector('.pu-conv')?.value) || 1;
+        cumulativeFactor *= localConv;
+        const barcodes = [];
+        div.querySelectorAll('.bc-val').forEach(inp => { if(inp.value.trim()) barcodes.push(inp.value.trim()); });
+        units.push({
+            unit,
+            local_factor: localConv,
+            conversion_factor: cumulativeFactor,
+            cost_price: parseFloat(div.querySelector('.pu-cost')?.value) || 0,
+            sell_price: parseFloat(div.querySelector('.pu-sell')?.value) || 0,
+            is_purchase: div.querySelector('.pu-purchase')?.checked || false,
+            is_sale: div.querySelector('.pu-sale')?.checked || false,
+            barcodes: barcodes
+        });
+    });
+    return units;
+}
+
+// === Camera Scanner ===
+function scanBarcode(inputId) {
+    scanTargetInput = inputId ? document.getElementById(inputId) : null;
+    if (!scanTargetInput) return;
+    document.getElementById('scannerModal').classList.remove('hidden');
+    document.getElementById('scannerManualInput').value = '';
+    
+    if (typeof Html5Qrcode !== 'undefined') {
+        if (scannerHtml5) { try{scannerHtml5.stop();}catch(e){} }
+        scannerHtml5 = new Html5Qrcode('scannerReader');
+        scannerHtml5.start(
+            { facingMode: 'environment' },
+            { fps: 10, qrbox: { width: 250, height: 100 } },
+            (text) => {
+                document.getElementById('scannerManualInput').value = text;
+                applyScan();
+            },
+            () => {}
+        ).catch(err => console.log('Camera err:', err));
+    }
+}
+
+function applyScan() {
+    const val = document.getElementById('scannerManualInput').value.trim();
+    if (val && scanTargetInput) {
+        scanTargetInput.value = val;
+    }
+    closeScannerModal();
+}
+
+function closeScannerModal() {
+    if (scannerHtml5) { try{scannerHtml5.stop();}catch(e){} }
+    document.getElementById('scannerModal').classList.add('hidden');
+}
+
+// === Modal Open/Close ===
 function openAddModal() {
     document.getElementById('modalTitle').textContent = 'إضافة صنف جديد';
     document.getElementById('productId').value = '';
@@ -424,20 +694,43 @@ function openAddModal() {
     document.getElementById('productUnit').value = 'حبه';
     document.getElementById('productCostPrice').value = '0';
     document.getElementById('productSellPrice').value = '0';
+    document.getElementById('productMinStock').value = '0';
+    document.getElementById('productNotes').value = '';
+    document.getElementById('productExtraUnits').innerHTML = '';
+    pUnitCount = 0;
     document.getElementById('productModal').classList.remove('hidden');
 }
 
-function editProduct(id, name, brand, code, barcode, categoryId, unit, cost, sell) {
+async function editProduct(id, name, brand, code, barcode, categoryId, unit, cost, sell) {
     document.getElementById('modalTitle').textContent = 'تعديل الصنف';
     document.getElementById('productId').value = id;
     document.getElementById('productName').value = name;
-    document.getElementById('productBrand').value = brand;
-    document.getElementById('productCode').value = code;
-    document.getElementById('productBarcode').value = barcode;
-    document.getElementById('productCategory').value = categoryId;
-    document.getElementById('productUnit').value = unit;
-    document.getElementById('productCostPrice').value = cost;
-    document.getElementById('productSellPrice').value = sell;
+    document.getElementById('productBrand').value = brand || '';
+    document.getElementById('productCode').value = code || '';
+    document.getElementById('productBarcode').value = barcode || '';
+    document.getElementById('productCategory').value = categoryId || '';
+    document.getElementById('productUnit').value = unit || 'حبه';
+    document.getElementById('productCostPrice').value = cost || 0;
+    document.getElementById('productSellPrice').value = sell || 0;
+    document.getElementById('productMinStock').value = '0';
+    document.getElementById('productNotes').value = '';
+    document.getElementById('productExtraUnits').innerHTML = '';
+    pUnitCount = 0;
+    
+    try {
+        const resp = await fetch(`/api/products/${id}/barcodes`);
+        const barcodes = await resp.json();
+        barcodes.forEach(b => {
+            addProductUnit(
+                b.unit || '', b.barcode || '',
+                b.conversion_factor || b.pack_size || 1,
+                b.cost_price || '', b.sell_price || '',
+                b.is_purchase !== false, b.is_sale !== false,
+                (b.extra_barcodes || [])
+            );
+        });
+    } catch(e) {}
+    
     document.getElementById('productModal').classList.remove('hidden');
 }
 
@@ -446,6 +739,7 @@ function closeModal() { document.getElementById('productModal').classList.add('h
 async function saveProduct(e) {
     e.preventDefault();
     const id = document.getElementById('productId').value;
+    const extraUnits = getProductExtraUnits();
     const data = {
         name: document.getElementById('productName').value,
         brand: document.getElementById('productBrand').value || null,
@@ -455,6 +749,9 @@ async function saveProduct(e) {
         unit: document.getElementById('productUnit').value || 'حبه',
         cost_price: parseFloat(document.getElementById('productCostPrice').value) || 0,
         sell_price: parseFloat(document.getElementById('productSellPrice').value) || 0,
+        min_stock: parseFloat(document.getElementById('productMinStock')?.value) || 0,
+        notes: document.getElementById('productNotes')?.value || null,
+        extra_units: extraUnits
     };
     try {
         const resp = await fetch(id ? `/api/products/${id}` : '/api/products', {

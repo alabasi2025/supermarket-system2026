@@ -1,63 +1,37 @@
 # -*- coding: utf-8 -*-
-import sqlite3
+import psycopg2, sys
+sys.stdout.reconfigure(encoding='utf-8')
+conn = psycopg2.connect(host='localhost', database='supermarket', user='postgres', password='774424555')
+cur = conn.cursor()
 
-conn = sqlite3.connect('supermarket.db')
-c = conn.cursor()
+# جمع كل الوحدات المستخدمة
+cur.execute("SELECT DISTINCT unit FROM product_barcodes WHERE unit IS NOT NULL AND unit != ''")
+pb_units = [r[0] for r in cur.fetchall()]
 
-# إنشاء جدول الوحدات
-c.execute('''
-    CREATE TABLE IF NOT EXISTS units (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        symbol TEXT,
-        is_active INTEGER DEFAULT 1
-    )
-''')
+cur.execute("SELECT DISTINCT unit FROM products WHERE unit IS NOT NULL AND unit != ''")
+p_units = [r[0] for r in cur.fetchall()]
 
-# إنشاء جدول وحدات الصنف المتعددة
-c.execute('''
-    CREATE TABLE IF NOT EXISTS product_units (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL,
-        unit_id INTEGER NOT NULL,
-        conversion_factor REAL DEFAULT 1,
-        barcode TEXT,
-        price REAL DEFAULT 0,
-        is_default INTEGER DEFAULT 0,
-        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-        FOREIGN KEY (unit_id) REFERENCES units(id),
-        UNIQUE(product_id, unit_id)
-    )
-''')
+all_units = set(pb_units + p_units)
 
-# إضافة الوحدات الافتراضية
-default_units = [
-    ('قطعة', 'قطعة'),
-    ('كرتون', 'كرتون'),
-    ('كيلو', 'كجم'),
-    ('جرام', 'جم'),
-    ('لتر', 'لتر'),
-    ('مل', 'مل'),
-    ('باكت', 'باكت'),
-    ('علبة', 'علبة'),
-    ('كيس', 'كيس'),
-    ('شدة', 'شدة'),
-    ('صندوق', 'صندوق'),
-    ('شوال', 'شوال'),
-    ('درزن', 'درزن'),
-    ('متر', 'م'),
-    ('باليت', 'باليت'),
-    ('طن', 'طن'),
-]
+# الوحدات الموجودة
+cur.execute("SELECT name FROM units")
+existing = set(r[0] for r in cur.fetchall())
 
-for unit_name, symbol in default_units:
-    try:
-        c.execute("INSERT INTO units (name, symbol) VALUES (?, ?)", (unit_name, symbol))
-        print(f"✅ تم إضافة: {unit_name}")
-    except sqlite3.IntegrityError:
-        print(f"⏭️ موجود: {unit_name}")
+# إضافة الناقصة
+added = 0
+for u in sorted(all_units):
+    if u not in existing:
+        cur.execute("INSERT INTO units (name, is_active) VALUES (%s, TRUE)", (u,))
+        print(f"  + {u}")
+        added += 1
 
 conn.commit()
-conn.close()
 
-print("\n✅ تم إنشاء جدول الوحدات وإضافة الوحدات الافتراضية!")
+print(f"\nأضفت {added} وحدة جديدة")
+
+# عرض الكل
+cur.execute("SELECT id, name, is_active FROM units ORDER BY id")
+for r in cur.fetchall():
+    print(f"  ID:{r[0]} | {r[1]} | {'نشط' if r[2] else 'معطل'}")
+
+conn.close()

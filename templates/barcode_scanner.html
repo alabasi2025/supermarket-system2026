@@ -50,6 +50,18 @@
         
         <!-- Camera Mode -->
         <div id="cameraMode" class="hidden space-y-4">
+            <div class="max-w-md mx-auto space-y-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">اختر الكاميرا</label>
+                    <select id="cameraSelect" class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+                        <option value="">تلقائي (الأفضل)</option>
+                    </select>
+                </div>
+                <div class="flex flex-wrap justify-center gap-2 text-sm">
+                    <button type="button" onclick="setScanProfile('normal')" id="profileNormal" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white">عادي</button>
+                    <button type="button" onclick="setScanProfile('accurate')" id="profileAccurate" class="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700">دقيق</button>
+                </div>
+            </div>
             <div id="reader" class="w-full max-w-md mx-auto rounded-2xl overflow-hidden border-4 border-indigo-200"></div>
             <div class="flex justify-center gap-2">
                 <button onclick="startCamera()" id="startCameraBtn"
@@ -62,7 +74,7 @@
                 </button>
             </div>
             <p class="text-center text-gray-500 text-sm">
-                📱 وجّه كاميرا الموبايل نحو الباركود
+                📱 وجّه كاميرا الموبايل نحو الباركود — إذا لم يقرأ جرّب تغيير الكاميرا أو وضع "دقيق"
             </p>
         </div>
     </div>
@@ -143,10 +155,10 @@
                 </div>
                 <p class="text-gray-600 mb-2">الباركود:</p>
                 <p id="notFoundBarcode" class="text-2xl font-mono font-bold text-gray-800 mb-6"></p>
-                <p class="text-gray-500 mb-6">هل تريد إضافة صنف جديد بهذا الباركود؟</p>
+                <p class="text-gray-500 mb-6">هل تريد رفع طلب إضافة هذا الصنف؟</p>
                 <div class="flex justify-center gap-3">
-                    <button onclick="openAddProductModal()" class="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 transition-all font-medium shadow-lg">
-                        ➕ إضافة صنف جديد
+                    <button onclick="goToAddRequest()" class="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 transition-all font-medium shadow-lg">
+                        📝 طلب إضافة صنف
                     </button>
                     <button onclick="resetScanner()" class="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors">
                         🔄 مسح آخر
@@ -243,6 +255,8 @@ let html5QrCode = null;
 let currentMode = 'manual';
 let scanHistory = [];
 let lastScannedBarcode = '';
+let availableCameras = [];
+let scanProfile = 'normal';
 
 // Set scanning mode
 function setMode(mode) {
@@ -268,25 +282,107 @@ function setMode(mode) {
 // Start camera scanning
 let scanning = true;
 
-function startCamera() {
+function setScanProfile(profile) {
+    scanProfile = profile;
+    document.getElementById('profileNormal').className = profile === 'normal'
+        ? 'px-3 py-1.5 rounded-lg bg-indigo-600 text-white'
+        : 'px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700';
+    document.getElementById('profileAccurate').className = profile === 'accurate'
+        ? 'px-3 py-1.5 rounded-lg bg-indigo-600 text-white'
+        : 'px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700';
+}
+
+async function loadCameras() {
+    try {
+        availableCameras = await Html5Qrcode.getCameras();
+        const select = document.getElementById('cameraSelect');
+        if (!select) return;
+        select.innerHTML = '<option value="">تلقائي (الأفضل)</option>';
+        availableCameras.forEach((cam, idx) => {
+            const opt = document.createElement('option');
+            opt.value = cam.id;
+            opt.textContent = cam.label || `كاميرا ${idx + 1}`;
+            select.appendChild(opt);
+        });
+    } catch (e) {
+        console.warn('loadCameras failed', e);
+    }
+}
+
+async function startCamera() {
     scanning = true;
-    html5QrCode = new Html5Qrcode("reader");
-    
-    html5QrCode.start(
-        { facingMode: "environment" },
-        {
-            fps: 5,
-            qrbox: { width: 250, height: 150 },
-            aspectRatio: 1.5
-        },
-        onScanSuccess,
-        onScanFailure
-    ).then(() => {
+
+    try {
+        if (html5QrCode) {
+            try { await html5QrCode.stop(); } catch(e) {}
+            try { await html5QrCode.clear(); } catch(e) {}
+        }
+
+        html5QrCode = new Html5Qrcode("reader", { verbose: false });
+
+        if (!availableCameras.length) {
+            await loadCameras();
+        }
+
+        const selectedCamera = document.getElementById('cameraSelect')?.value;
+        let cameraConfig = { facingMode: 'environment' };
+
+        if (selectedCamera) {
+            cameraConfig = { deviceId: { exact: selectedCamera } };
+        } else if (availableCameras && availableCameras.length > 0) {
+            const backCam = availableCameras.find(c => {
+                const name = (c.label || '').toLowerCase();
+                return name.includes('back') || name.includes('rear') || name.includes('environment') || name.includes('wide');
+            });
+            cameraConfig = backCam ? { deviceId: { exact: backCam.id } } : { deviceId: { exact: availableCameras[0].id } };
+        }
+
+        const config = scanProfile === 'accurate'
+            ? {
+                fps: 6,
+                qrbox: { width: 320, height: 180 },
+                aspectRatio: 1.777778,
+                rememberLastUsedCamera: true,
+                disableFlip: false,
+                experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+                formatsToSupport: [
+                    Html5QrcodeSupportedFormats.EAN_13,
+                    Html5QrcodeSupportedFormats.EAN_8,
+                    Html5QrcodeSupportedFormats.UPC_A,
+                    Html5QrcodeSupportedFormats.UPC_E,
+                    Html5QrcodeSupportedFormats.CODE_128,
+                    Html5QrcodeSupportedFormats.CODE_39,
+                    Html5QrcodeSupportedFormats.ITF,
+                    Html5QrcodeSupportedFormats.QR_CODE
+                ]
+            }
+            : {
+                fps: 10,
+                qrbox: { width: 280, height: 160 },
+                aspectRatio: 1.777778,
+                rememberLastUsedCamera: true,
+                disableFlip: false,
+                experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+                formatsToSupport: [
+                    Html5QrcodeSupportedFormats.EAN_13,
+                    Html5QrcodeSupportedFormats.EAN_8,
+                    Html5QrcodeSupportedFormats.UPC_A,
+                    Html5QrcodeSupportedFormats.UPC_E,
+                    Html5QrcodeSupportedFormats.CODE_128,
+                    Html5QrcodeSupportedFormats.CODE_39,
+                    Html5QrcodeSupportedFormats.ITF,
+                    Html5QrcodeSupportedFormats.QR_CODE
+                ]
+            };
+
+        await html5QrCode.start(cameraConfig, config, onScanSuccess, onScanFailure);
+
         document.getElementById('startCameraBtn').classList.add('hidden');
         document.getElementById('stopCameraBtn').classList.remove('hidden');
-    }).catch((err) => {
-        alert('لا يمكن الوصول للكاميرا: ' + err);
-    });
+    } catch (err) {
+        console.error(err);
+        alert('تعذر تشغيل ماسح الباركود بالكاميرا: ' + (err?.message || err));
+    }
 }
 
 // Stop camera
@@ -323,7 +419,10 @@ function onScanSuccess(decodedText, decodedResult) {
 }
 
 function onScanFailure(error) {
-    // Ignore
+    // تجاهل أخطاء عدم الالتقاط المعتادة، لكن اتركها في console للتشخيص
+    if (error && !String(error).includes('NotFoundException')) {
+        console.debug('scan failure', error);
+    }
 }
 
 // Search barcode (manual input)
@@ -461,7 +560,12 @@ function copyBarcode() {
     alert('تم نسخ الباركود!');
 }
 
-// Open add product modal
+// Go to requests page to add product
+function goToAddRequest() {
+    window.location.href = '/requests?new=add_product&barcode=' + encodeURIComponent(lastScannedBarcode);
+}
+
+// Open add product modal (legacy)
 function openAddProductModal() {
     document.getElementById('newProductBarcode').value = lastScannedBarcode;
     document.getElementById('addProductModal').classList.remove('hidden');
@@ -534,6 +638,7 @@ function playBeep() {
 // Auto-focus on barcode input
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('barcodeInput').focus();
+    loadCameras();
 });
 
 // Global key listener for barcode scanner devices

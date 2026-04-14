@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}إدارة الصلاحيات{% endblock %}
+{% block page_title %}إدارة الصلاحيات{% endblock %}
+{% block page_subtitle %}تحديد صلاحيات كل مستخدم لكل صفحة{% endblock %}
+
+{% block content %}
+<input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+
+<div class="max-w-7xl mx-auto space-y-6">
+    <!-- اختيار المستخدم -->
+    <div class="card p-5">
+        <div class="flex flex-col md:flex-row gap-4 items-center">
+            <label class="font-bold text-gray-700 dark:text-gray-300 shrink-0">👤 اختر المستخدم:</label>
+            <select id="selectedUser" onchange="loadUserPerms()" class="form-input max-w-md">
+                {% for user in users %}
+                <option value="{{ user.id }}">{{ user.display_name or user.username }} ({{ user.role }})</option>
+                {% endfor %}
+            </select>
+            <button onclick="selectAll(true)" class="btn btn-success text-sm">✅ تحديد الكل</button>
+            <button onclick="selectAll(false)" class="btn btn-danger text-sm">❌ إلغاء الكل</button>
+            <button onclick="savePermissions()" class="btn btn-primary text-sm">💾 حفظ الصلاحيات</button>
+        </div>
+    </div>
+
+    <!-- جدول الصلاحيات -->
+    <div class="card overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-800 border-b-2 border-gray-200 dark:border-gray-700">
+                        <th class="p-3 text-right font-bold text-gray-700 dark:text-gray-300 min-w-[200px]">الصفحة</th>
+                        <th class="p-3 text-center font-bold text-gray-700 dark:text-gray-300 w-24">
+                            <div>👁️ عرض</div>
+                            <button onclick="toggleColumn('view')" class="text-[10px] text-indigo-500 hover:underline">تبديل</button>
+                        </th>
+                        <th class="p-3 text-center font-bold text-gray-700 dark:text-gray-300 w-24">
+                            <div>➕ إضافة</div>
+                            <button onclick="toggleColumn('add')" class="text-[10px] text-indigo-500 hover:underline">تبديل</button>
+                        </th>
+                        <th class="p-3 text-center font-bold text-gray-700 dark:text-gray-300 w-24">
+                            <div>✏️ تعديل</div>
+                            <button onclick="toggleColumn('edit')" class="text-[10px] text-indigo-500 hover:underline">تبديل</button>
+                        </th>
+                        <th class="p-3 text-center font-bold text-gray-700 dark:text-gray-300 w-24">
+                            <div>🗑️ حذف</div>
+                            <button onclick="toggleColumn('delete')" class="text-[10px] text-indigo-500 hover:underline">تبديل</button>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for module in modules %}
+                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50" data-module="{{ module.code }}">
+                        <td class="p-3">
+                            <div class="flex items-center gap-2">
+                                <span class="text-lg">{{ module.icon }}</span>
+                                <span class="font-bold text-gray-800 dark:text-gray-100">{{ module.name }}</span>
+                            </div>
+                        </td>
+                        <td class="p-3 text-center">
+                            <input type="checkbox" class="perm-cb w-5 h-5 rounded text-indigo-600 cursor-pointer" data-action="view" data-module="{{ module.code }}">
+                        </td>
+                        <td class="p-3 text-center">
+                            <input type="checkbox" class="perm-cb w-5 h-5 rounded text-emerald-600 cursor-pointer" data-action="add" data-module="{{ module.code }}">
+                        </td>
+                        <td class="p-3 text-center">
+                            <input type="checkbox" class="perm-cb w-5 h-5 rounded text-amber-600 cursor-pointer" data-action="edit" data-module="{{ module.code }}">
+                        </td>
+                        <td class="p-3 text-center">
+                            <input type="checkbox" class="perm-cb w-5 h-5 rounded text-red-600 cursor-pointer" data-action="delete" data-module="{{ module.code }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="flex justify-end">
+        <button onclick="savePermissions()" class="btn btn-primary px-8 py-3 text-lg">💾 حفظ الصلاحيات</button>
+    </div>
+</div>
+
+<script>
+const permsMap = {{ perms_map|tojson|safe }};
+
+function loadUserPerms() {
+    const userId = document.getElementById('selectedUser').value;
+    document.querySelectorAll('.perm-cb').forEach(cb => {
+        const key = userId + '_' + cb.dataset.module;
+        const perm = permsMap[key] || {};
+        cb.checked = perm[cb.dataset.action] || false;
+    });
+}
+
+function selectAll(val) {
+    document.querySelectorAll('.perm-cb').forEach(cb => cb.checked = val);
+}
+
+function toggleColumn(action) {
+    const cbs = document.querySelectorAll(`.perm-cb[data-action="${action}"]`);
+    const allChecked = Array.from(cbs).every(cb => cb.checked);
+    cbs.forEach(cb => cb.checked = !allChecked);
+}
+
+async function savePermissions() {
+    const userId = document.getElementById('selectedUser').value;
+    const permissions = {};
+    
+    document.querySelectorAll('.perm-cb').forEach(cb => {
+        const mod = cb.dataset.module;
+        if (!permissions[mod]) permissions[mod] = {};
+        permissions[mod][cb.dataset.action] = cb.checked;
+    });
+    
+    const resp = await fetch('/api/permissions/save', {
+        method: 'POST',
+        headers: {'X-CSRF-Token': document.getElementById('csrfToken').value, 'Content-Type': 'application/json'},
+        body: JSON.stringify({ user_id: parseInt(userId), permissions })
+    });
+    const data = await resp.json();
+    
+    // Update local map
+    if (data.success) {
+        for (const [mod, perm] of Object.entries(permissions)) {
+            permsMap[userId + '_' + mod] = perm;
+        }
+    }
+    
+    alert(data.message);
+}
+
+// Load first user on page load
+document.addEventListener('DOMContentLoaded', loadUserPerms);
+</script>
+{% endblock %}

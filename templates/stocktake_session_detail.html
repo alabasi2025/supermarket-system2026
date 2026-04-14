@@ -1,0 +1,156 @@
+{% extends 'base.html' %}
+
+{% block title %}تفاصيل الجرد #{{ stocktake_session.id }}{% endblock %}
+{% block page_title %}تفاصيل جلسة الجرد{% endblock %}
+{% block page_subtitle %}{{ stocktake_session.title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-6">
+    <!-- معلومات الجلسة -->
+    <div class="card p-6">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div class="space-y-2">
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">{{ stocktake_session.title }}</h2>
+                <div class="flex flex-wrap gap-3 text-sm">
+                    <span class="text-gray-500">المنشئ: <strong>{{ stocktake_session.created_by_name or 'غير معروف' }}</strong></span>
+                    <span class="text-gray-500">التاريخ: <strong>{{ stocktake_session.created_at.strftime('%Y-%m-%d %H:%M') if stocktake_session.created_at else '' }}</strong></span>
+                    {% if stocktake_session.status == 'open' %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">مفتوحة</span>
+                    {% else %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">مغلقة {{ stocktake_session.closed_at.strftime('%Y-%m-%d %H:%M') if stocktake_session.closed_at else '' }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <a href="/stocktake/review" class="btn btn-secondary">← العودة للقائمة</a>
+                <a href="/stocktake/export/{{ stocktake_session.id }}" class="btn btn-success">📥 تصدير Excel</a>
+                {% if stocktake_session.status == 'open' %}
+                <a href="/stocktake" class="btn btn-primary">متابعة الجرد</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- إحصائيات سريعة -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="card p-4 text-center">
+            <div class="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{{ items|length }}</div>
+            <div class="text-sm text-gray-500">صنف مسجل</div>
+        </div>
+        <div class="card p-4 text-center">
+            <div class="text-3xl font-bold text-amber-600 dark:text-amber-400">{{ requests|length }}</div>
+            <div class="text-sm text-gray-500">طلب غير موجود</div>
+        </div>
+        <div class="card p-4 text-center">
+            <div class="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{{ items|sum(attribute='counted_stock')|round(2) }}</div>
+            <div class="text-sm text-gray-500">إجمالي الكميات</div>
+        </div>
+        <div class="card p-4 text-center">
+            <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ (items|selectattr('batch_no')|list|length) }}</div>
+            <div class="text-sm text-gray-500">مع رقم باتش</div>
+        </div>
+    </div>
+
+    <!-- عناصر الجرد -->
+    <div class="card overflow-hidden">
+        <div class="p-5 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
+            <h3 class="text-lg font-bold">📦 الأصناف المسجلة في الجرد ({{ items|length }})</h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">#</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الصنف</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الباركود</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الوحدة</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">العبوة</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الكمية</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الباتش</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الإنتاج</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الانتهاء</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">ملاحظة</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">🎤</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                        <td class="py-3 px-4 font-mono text-gray-400">{{ loop.index }}</td>
+                        <td class="py-3 px-4 font-bold text-gray-800 dark:text-gray-100">{{ item.product_name or item.product_name_db }}</td>
+                        <td class="py-3 px-4 font-mono text-gray-600 dark:text-gray-400">{{ item.barcode }}</td>
+                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ item.selected_unit or item.unit or '-' }}</td>
+                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ item.pack_size or 1 }}</td>
+                        <td class="py-3 px-4 font-bold text-indigo-600 dark:text-indigo-400">{{ item.counted_stock }}</td>
+                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ item.batch_no or '-' }}</td>
+                        <td class="py-3 px-4 text-gray-500">{{ item.production_date.strftime('%Y-%m-%d') if item.production_date else '-' }}</td>
+                        <td class="py-3 px-4 text-gray-500">{{ item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '-' }}</td>
+                        <td class="py-3 px-4 text-gray-500 max-w-[200px] truncate" title="{{ item.notes or '' }}">{{ item.notes or '-' }}</td>
+                        <td class="py-3 px-4">
+                            {% if item.voice_note_path %}
+                            <audio controls class="h-8 w-32"><source src="/{{ item.voice_note_path }}"></audio>
+                            {% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="10" class="py-8 text-center text-gray-400">لا توجد أصناف مسجلة</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- طلبات الأصناف غير الموجودة -->
+    <div class="card overflow-hidden">
+        <div class="p-5 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+            <h3 class="text-lg font-bold">📝 طلبات الأصناف غير الموجودة ({{ requests|length }})</h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">#</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الباركود</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">اسم الصنف</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">القسم</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الوحدة</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الكمية</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الحالة</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">ملاحظة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in requests %}
+                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                        <td class="py-3 px-4 font-mono text-gray-400">{{ loop.index }}</td>
+                        <td class="py-3 px-4 font-mono font-bold text-gray-800 dark:text-gray-100">{{ req.barcode }}</td>
+                        <td class="py-3 px-4 text-gray-800 dark:text-gray-100">{{ req.product_name or 'غير محدد' }}</td>
+                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ req.category_name or 'غير محدد' }}</td>
+                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ req.unit or '-' }}</td>
+                        <td class="py-3 px-4 font-bold text-amber-600 dark:text-amber-400">{{ req.quantity_counted or 1 }}</td>
+                        <td class="py-3 px-4">
+                            {% if req.status == 'pending' %}
+                            <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">قيد المراجعة</span>
+                            {% elif req.status == 'approved' %}
+                            <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">تمت الموافقة</span>
+                            {% elif req.status == 'rejected' %}
+                            <span class="px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">مرفوض</span>
+                            {% else %}
+                            <span class="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600">{{ req.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3 px-4 text-gray-500 max-w-[200px] truncate" title="{{ req.notes or '' }}">{{ req.notes or '-' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="py-8 text-center text-gray-400">لا توجد طلبات</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

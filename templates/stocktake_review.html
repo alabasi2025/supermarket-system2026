@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+
+{% block title %}مراجعة الجرد{% endblock %}
+{% block page_title %}مراجعة جلسات الجرد{% endblock %}
+{% block page_subtitle %}عرض وإدارة جلسات الجرد الأولي{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <div class="card p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">📋 جلسات الجرد</h2>
+            <a href="/stocktake" class="btn btn-primary">➕ جلسة جرد جديدة</a>
+        </div>
+        
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-gray-200 dark:border-gray-700">
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">#</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">العنوان</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الحالة</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الأصناف</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الطلبات</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">المنشئ</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">تاريخ الإنشاء</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in sessions %}
+                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                        <td class="py-3 px-4 font-mono text-gray-500">{{ s.id }}</td>
+                        <td class="py-3 px-4 font-bold text-gray-800 dark:text-gray-100">{{ s.title }}</td>
+                        <td class="py-3 px-4">
+                            {% if s.status == 'open' %}
+                            <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">مفتوحة</span>
+                            {% else %}
+                            <span class="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">مغلقة</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3 px-4">
+                            <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">{{ s.items_count }} صنف</span>
+                        </td>
+                        <td class="py-3 px-4">
+                            <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">{{ s.requests_count }} طلب</span>
+                        </td>
+                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ s.created_by_name or 'غير معروف' }}</td>
+                        <td class="py-3 px-4 text-gray-500 text-sm">{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '' }}</td>
+                        <td class="py-3 px-4">
+                            <a href="/stocktake/review/{{ s.id }}" class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-medium">عرض التفاصيل</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="py-8 text-center text-gray-400">لا توجد جلسات جرد بعد</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

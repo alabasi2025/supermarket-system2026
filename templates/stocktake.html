@@ -1,0 +1,1057 @@
+{% extends 'base.html' %}
+
+{% block title %}الجرد الأولي{% endblock %}
+{% block page_title %}الجرد الأولي للأصناف{% endblock %}
+{% block page_subtitle %}الموجود يُسجل في الجرد، وغير الموجود يُرفع للمراجعة{% endblock %}
+
+{% block content %}
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+
+<div class="max-w-6xl mx-auto space-y-6">
+    <div class="card p-6">
+        <div class="flex flex-col lg:flex-row gap-4 lg:items-end lg:justify-between">
+            <div>
+                <h2 class="text-lg font-bold text-gray-800 dark:text-gray-100">جلسة الجرد</h2>
+                <p class="text-sm text-gray-500 dark:text-gray-400">ابدأ جلسة جرد أولي ثم امسح الأصناف وسجل الوحدة والكمية والتواريخ والباتش والمرفقات.</p>
+            </div>
+            <div class="flex flex-col md:flex-row gap-3 w-full lg:w-auto">
+                <input type="text" id="sessionTitle" value="{% if open_session %}{{ open_session.title }}{% else %}جرد أولي{% endif %}" placeholder="عنوان الجرد" class="form-input min-w-[240px]">
+                <button id="startSessionBtn" onclick="startSession()" class="btn btn-primary {% if open_session %}hidden{% endif %}">▶️ بدء جلسة جرد</button>
+                <div id="currentSessionBadge" class="{% if not open_session %}hidden{% endif %} flex items-center gap-3">
+                    <span class="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300 text-sm font-bold">
+                        جلسة مفتوحة: <span id="currentSessionTitle">{{ open_session.title if open_session else '' }}</span>
+                    </span>
+                    <button onclick="closeSession()" class="px-4 py-2 rounded-xl bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/20 dark:text-red-300 text-sm font-bold transition-colors">🔒 إغلاق الجلسة</button>
+                    <a href="/stocktake/review" class="px-4 py-2 rounded-xl bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/20 dark:text-blue-300 text-sm font-bold transition-colors">📋 مراجعة الجرد</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div class="xl:col-span-2 space-y-6">
+            <div class="card p-6 space-y-4">
+                <div class="flex flex-col md:flex-row gap-4 items-center justify-between">
+                    <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">📷 مسح الجرد</h3>
+                    <div class="flex gap-2">
+                        <button onclick="setMode('manual')" id="btnManual" class="px-4 py-2 rounded-xl font-medium transition-all bg-indigo-600 text-white">⌨️ يدوي</button>
+                        <button onclick="setMode('camera')" id="btnCamera" class="px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200">📱 كاميرا</button>
+                    </div>
+                </div>
+
+                <div id="manualMode" class="space-y-4">
+                    <div class="relative">
+                        <input type="text" id="barcodeInput" class="w-full px-6 py-4 text-2xl text-center border-2 border-indigo-300 rounded-2xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 font-mono tracking-widest" placeholder="امسح الباركود أو أدخله يدوياً" onkeypress="if(event.key === 'Enter') searchBarcode()">
+                        <button onclick="searchBarcode()" class="absolute left-3 top-1/2 -translate-y-1/2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">🔍 فحص</button>
+                    </div>
+                </div>
+
+                <div id="cameraMode" class="hidden space-y-4">
+                    <div class="max-w-md mx-auto space-y-3">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">اختر الكاميرا</label>
+                        <select id="cameraSelect" class="form-input">
+                            <option value="">تلقائي (الأفضل)</option>
+                        </select>
+                    </div>
+                    <div id="reader" class="w-full max-w-md mx-auto rounded-2xl overflow-hidden border-4 border-indigo-200"></div>
+                    <div class="flex justify-center gap-2">
+                        <button onclick="startCamera()" id="startCameraBtn" class="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-medium">▶️ تشغيل الكاميرا</button>
+                        <button onclick="stopCamera()" id="stopCameraBtn" class="px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium hidden">⏹️ إيقاف الكاميرا</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="foundCard" class="card hidden overflow-hidden">
+                <div class="p-5 border-b border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20">
+                    <h3 class="text-lg font-bold text-emerald-700 dark:text-emerald-300">✅ الصنف موجود</h3>
+                    <p class="text-sm text-emerald-600 dark:text-emerald-400 mt-1">سجل بيانات الجرد الأولي للصنف الموجود.</p>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div><p class="text-xs text-gray-500">اسم الصنف</p><p id="foundName" class="font-bold text-gray-800 dark:text-gray-100"></p></div>
+                        <div><p class="text-xs text-gray-500">الباركود</p><p id="foundBarcode" class="font-mono font-bold text-gray-800 dark:text-gray-100"></p></div>
+                        <div><p class="text-xs text-gray-500">القسم</p><p id="foundCategory" class="font-bold text-gray-800 dark:text-gray-100"></p></div>
+                        <div><p class="text-xs text-gray-500">الرصيد الحالي</p><p id="foundStock" class="font-bold text-gray-800 dark:text-gray-100"></p></div>
+                    </div>
+
+                    <!-- هيكل الوحدات الهرمي -->
+                    <div id="foundUnitsHierarchy" class="border-2 border-emerald-200 dark:border-emerald-800 rounded-xl overflow-hidden hidden">
+                        <div class="p-3 bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-800">
+                            <h4 class="font-bold text-emerald-700 dark:text-emerald-300 text-sm">📦 وحدات الصنف</h4>
+                        </div>
+                        <div id="foundUnitsTable" class="divide-y divide-gray-100 dark:divide-gray-800"></div>
+                    </div>
+
+                    <form id="existingItemForm" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input type="hidden" id="existingProductId" name="product_id">
+                        <input type="hidden" id="existingExpectedStock" name="expected_stock">
+                        <input type="hidden" id="existingBarcode" name="barcode">
+                        <input type="hidden" id="existingProductName" name="product_name">
+                        <input type="hidden" id="existingSessionId" name="session_id">
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الوحدة</label>
+                            <select id="existingUnit" name="selected_unit" class="form-input" onchange="updateExistingUnitMeta(); calcBaseQty();"></select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الكمية</label>
+                            <input type="number" id="existingQuantity" name="counted_stock" value="1" min="0" step="0.01" class="form-input" oninput="calcBaseQty()">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">العبوة / Pack Size</label>
+                            <input type="number" id="existingPackSize" name="pack_size" value="1" min="1" class="form-input">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-emerald-600 dark:text-emerald-400 mb-1">= بالوحدة الأساسية</label>
+                            <div id="baseQtyDisplay" class="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl font-bold text-emerald-700 dark:text-emerald-300 text-lg">-</div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">رقم الباتش</label>
+                            <input type="text" id="existingBatchNo" name="batch_no" class="form-input" placeholder="رقم التشغيلة / الباتش">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الإنتاج <span class="text-red-500">*</span></label>
+                            <input type="date" id="existingProductionDate" name="production_date" class="form-input" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الانتهاء <span class="text-red-500">*</span></label>
+                            <input type="date" id="existingExpiryDate" name="expiry_date" class="form-input" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">صورة الصنف</label>
+                            <input type="file" id="existingImage" name="image" accept="image/*" capture="environment" class="form-input p-2">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">مرفق اختياري</label>
+                            <input type="file" id="existingAttachment" name="attachment" class="form-input p-2">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ملاحظة نصية</label>
+                            <textarea id="existingNotes" name="notes" rows="2" class="form-input" placeholder="أي ملاحظة عن الكمية أو العبوة أو الحالة"></textarea>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">🎤 ملاحظة صوتية</label>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <button type="button" id="existingRecordBtn" onclick="toggleRecording('existing')" class="px-4 py-2 rounded-xl bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 font-medium transition-colors">
+                                    🎤 تسجيل مباشر
+                                </button>
+                                <label class="px-4 py-2 rounded-xl bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 font-medium transition-colors cursor-pointer">
+                                    📁 رفع ملف صوتي
+                                    <input type="file" id="existingVoiceNoteUpload" accept="audio/*" class="hidden" onchange="handleVoiceUpload('existing', this)">
+                                </label>
+                                <span id="existingRecordStatus" class="text-sm text-gray-500"></span>
+                            </div>
+                            <div class="mt-2 flex items-center gap-3">
+                                <audio id="existingAudioPreview" controls class="hidden h-10"></audio>
+                                <button type="button" id="existingDeleteAudio" onclick="deleteRecording('existing')" class="hidden px-3 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 text-sm">🗑️ حذف</button>
+                            </div>
+                            <input type="file" id="existingVoiceNote" name="voice_note" accept="audio/*" class="hidden">
+                        </div>
+                    </form>
+
+                    <div class="flex justify-end gap-3">
+                        <button type="button" onclick="openFullEditRequest()" class="btn btn-secondary">📝 طلب تعديل الصنف</button>
+                        <button type="button" onclick="saveExistingItem()" class="btn btn-primary">💾 حفظ في الجرد</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="notFoundCard" class="card hidden overflow-hidden">
+                <div class="p-5 border-b border-amber-200 bg-amber-50 dark:bg-amber-900/20">
+                    <h3 class="text-lg font-bold text-amber-700 dark:text-amber-300">⚠️ الصنف غير موجود</h3>
+                    <p class="text-sm text-amber-600 dark:text-amber-400 mt-1">طابق رقم الباركود ثم ارفع طلب الصنف الجديد مع كل بيانات الجرد الأولي.</p>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                        <p class="text-xs text-gray-500">الباركود غير الموجود</p>
+                        <p id="missingBarcode" class="text-2xl font-mono font-bold text-gray-800 dark:text-gray-100"></p>
+                    </div>
+                    <button onclick="openRequestModal()" class="btn btn-primary">➕ رفع طلب إضافة الصنف</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-6">
+            <div class="card p-5">
+                <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4">📦 آخر عناصر الجرد</h3>
+                <div id="recentItemsList" class="space-y-2 max-h-[360px] overflow-y-auto">
+                    {% for item in recent_items %}
+                    <div class="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50">
+                        <div class="font-bold text-gray-800 dark:text-gray-100 text-sm">{{ item.product_name }}</div>
+                        <div class="text-xs text-gray-500">{{ item.barcode }} — {{ item.selected_unit or item.unit }} — كمية: {{ item.counted_stock }}</div>
+                        {% if item.voice_note_path %}
+                        <audio controls class="mt-1 h-8 w-full"><source src="/{{ item.voice_note_path }}"></audio>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <p class="text-sm text-gray-400 text-center py-4">لا توجد عناصر بعد</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="card p-5">
+                <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4">📝 طلبات غير الموجود</h3>
+                <div id="recentRequestsList" class="space-y-2 max-h-[360px] overflow-y-auto">
+                    {% for req in recent_requests %}
+                    <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20">
+                        <div class="font-bold text-gray-800 dark:text-gray-100 text-sm">{{ req.product_name or 'بدون اسم' }}</div>
+                        <div class="text-xs text-gray-500">{{ req.barcode }} — {{ req.category_name or 'غير محدد' }} — كمية: {{ req.quantity_counted or 1 }}</div>
+                    </div>
+                    {% else %}
+                    <p class="text-sm text-gray-400 text-center py-4">لا توجد طلبات بعد</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Full Edit Request Modal -->
+<div id="editRequestModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div class="p-5 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-t-2xl">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold">📝 طلب تعديل بيانات الصنف</h3>
+                <button onclick="closeFullEditRequest()" class="p-2 hover:bg-white/20 rounded-xl">✕</button>
+            </div>
+            <p class="text-sm text-white/80 mt-1">عدّل البيانات المطلوب تغييرها ثم ارفع الطلب</p>
+        </div>
+        <div class="p-5 space-y-4">
+            <input type="hidden" id="erProductId">
+            <input type="hidden" id="erOriginalData">
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">اسم الصنف</label>
+                    <input type="text" id="erName" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">الباركود الأساسي</label>
+                    <input type="text" id="erBarcode" class="form-input font-mono" dir="ltr">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">القسم</label>
+                    <select id="erCategory" class="form-input">
+                        <option value="">-- اختر --</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">الوحدة الأساسية</label>
+                    <select id="erUnit" class="form-input">
+                        {% for u in units %}
+                        <option value="{{ u.name }}">{{ u.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">العائلة</label>
+                    <input type="text" id="erBrand" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">التكلفة</label>
+                    <input type="number" id="erCost" class="form-input" min="0" step="1">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">البيع</label>
+                    <input type="number" id="erSell" class="form-input" min="0" step="1">
+                </div>
+            </div>
+
+            <!-- هيكل الوحدات الهرمي -->
+            <div class="border-2 border-blue-200 dark:border-blue-800 rounded-xl overflow-hidden">
+                <div class="p-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 flex items-center justify-between">
+                    <h4 class="font-bold text-blue-700 dark:text-blue-300 text-sm">📦 هيكل الوحدات</h4>
+                    <span class="text-xs text-blue-400">من الأصغر (أساسية) إلى الأكبر (شراء)</span>
+                </div>
+                
+                <!-- الوحدة الأساسية -->
+                <div class="p-3 bg-emerald-50/50 dark:bg-emerald-900/10 border-b border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">أساسية</span>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div><label class="text-xs text-gray-500">الوحدة</label>
+                        <select id="erUnit" class="form-input text-sm">
+                            {% for u in units %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}
+                        </select></div>
+                        <div><label class="text-xs text-gray-500">الباركود</label>
+                        <div class="flex gap-1">
+                            <input type="text" id="erBarcode" class="form-input text-sm font-mono flex-1" dir="ltr">
+                            <button type="button" onclick="erScanBarcode('erBarcode')" class="px-2 bg-indigo-100 text-indigo-700 rounded-lg text-lg hover:bg-indigo-200">📷</button>
+                        </div></div>
+                        <div><label class="text-xs text-gray-500">التكلفة</label>
+                        <input type="number" id="erCost" class="form-input text-sm" min="0" step="1"></div>
+                        <div><label class="text-xs text-gray-500">البيع</label>
+                        <input type="number" id="erSell" class="form-input text-sm" min="0" step="1"></div>
+                    </div>
+                </div>
+                
+                <!-- وحدات إضافية -->
+                <div id="erUnitsContainer" class="divide-y divide-gray-200 dark:divide-gray-700"></div>
+                <div class="p-3 bg-gray-50 dark:bg-gray-800/50">
+                    <button type="button" onclick="addErUnit()" class="w-full py-2.5 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 font-bold text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                        ➕ إضافة وحدة أكبر (باكت، كرتون، شده...)
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">ملاحظة للمراجع</label>
+                <textarea id="erNotes" rows="2" class="form-input" placeholder="أي ملاحظة إضافية..."></textarea>
+            </div>
+            
+            <div class="flex gap-3">
+                <button type="button" onclick="submitFullEditRequest()" class="flex-1 btn btn-primary">📤 رفع طلب التعديل</button>
+                <button type="button" onclick="closeFullEditRequest()" class="btn btn-secondary">إلغاء</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="requestModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-t-2xl">
+            <div class="flex items-center justify-between">
+                <h3 class="text-xl font-bold">رفع طلب إضافة صنف غير موجود</h3>
+                <button onclick="closeRequestModal()" class="p-2 hover:bg-white/20 rounded-xl transition-colors">✕</button>
+            </div>
+        </div>
+        <form id="requestForm" class="p-6 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الباركود</label>
+                    <input type="text" id="requestBarcode" name="barcode" readonly class="form-input bg-gray-50 dark:bg-gray-800 font-mono">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">اسم الصنف</label>
+                    <input type="text" id="requestProductName" name="product_name" class="form-input" placeholder="أدخل اسم الصنف كما هو على العبوة">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">القسم</label>
+                    <select id="requestCategory" name="category_id" class="form-input">
+                        <option value="">-- اختر القسم --</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الوحدة</label>
+                    <select id="requestUnit" name="unit" class="form-input">
+                        <option value="">-- اختر الوحدة --</option>
+                        {% for unit in units %}
+                        <option value="{{ unit.name }}">{{ unit.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الكمية</label>
+                    <input type="number" id="requestQuantity" name="quantity_counted" value="1" min="0" step="0.01" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">العبوة / Pack Size</label>
+                    <input type="number" id="requestPackSize" name="pack_size" value="1" min="1" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الإنتاج</label>
+                    <input type="date" id="requestProductionDate" name="production_date" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الانتهاء</label>
+                    <input type="date" id="requestExpiryDate" name="expiry_date" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">رقم الباتش</label>
+                    <input type="text" id="requestBatchNo" name="batch_no" class="form-input" placeholder="رقم التشغيلة / الباتش">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">سعر التكلفة</label>
+                    <input type="number" id="requestCostPrice" name="cost_price" min="0" step="0.01" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">سعر البيع</label>
+                    <input type="number" id="requestSellPrice" name="sell_price" min="0" step="0.01" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">صورة الصنف</label>
+                    <input type="file" id="requestImage" name="image" accept="image/*" capture="environment" class="form-input p-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">مرفق اختياري</label>
+                    <input type="file" id="requestAttachment" name="attachment" class="form-input p-2">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ملاحظة</label>
+                    <textarea id="requestNotes" name="notes" rows="3" class="form-input" placeholder="أي ملاحظة إضافية عن الصنف أو العبوة"></textarea>
+                </div>
+            </div>
+        </form>
+        <div class="p-6 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-3">
+            <button onclick="closeRequestModal()" class="btn">إلغاء</button>
+            <button onclick="submitRequest()" class="btn btn-primary">📤 رفع الطلب</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let html5QrCode = null;
+let currentMode = 'manual';
+let availableCameras = [];
+let currentSessionId = {{ open_session.id if open_session else 'null' }};
+let lastMissingBarcode = '';
+let lastFoundProduct = null;
+let lastFoundUnits = [];
+
+function csrfHeaders(extra = {}) {
+    const token = document.getElementById('csrfToken')?.value || '';
+    return Object.assign({ 'X-CSRF-Token': token }, extra);
+}
+
+function setMode(mode) {
+    currentMode = mode;
+    document.getElementById('btnManual').className = mode === 'manual' ? 'px-4 py-2 rounded-xl font-medium transition-all bg-indigo-600 text-white' : 'px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
+    document.getElementById('btnCamera').className = mode === 'camera' ? 'px-4 py-2 rounded-xl font-medium transition-all bg-indigo-600 text-white' : 'px-4 py-2 rounded-xl font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
+    document.getElementById('manualMode').classList.toggle('hidden', mode !== 'manual');
+    document.getElementById('cameraMode').classList.toggle('hidden', mode !== 'camera');
+    if (mode === 'manual') stopCamera();
+}
+
+async function loadCameras() {
+    try {
+        availableCameras = await Html5Qrcode.getCameras();
+        const select = document.getElementById('cameraSelect');
+        select.innerHTML = '<option value="">تلقائي (الأفضل)</option>';
+        availableCameras.forEach((cam, idx) => {
+            const opt = document.createElement('option');
+            opt.value = cam.id;
+            opt.textContent = cam.label || `كاميرا ${idx + 1}`;
+            select.appendChild(opt);
+        });
+    } catch (e) {
+        console.warn(e);
+    }
+}
+
+async function startSession() {
+    const title = document.getElementById('sessionTitle').value.trim();
+    const resp = await fetch('/api/stocktake/session', {
+        method: 'POST',
+        headers: csrfHeaders({'Content-Type': 'application/json'}),
+        body: JSON.stringify({ title })
+    });
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        alert('انتهت الجلسة أو رمز الحماية غير صالح. أعد تحميل الصفحة ثم سجّل الدخول إذا لزم.');
+        return;
+    }
+    const data = await resp.json();
+    if (data.success) {
+        currentSessionId = data.session_id;
+        document.getElementById('startSessionBtn').classList.add('hidden');
+        document.getElementById('currentSessionBadge').classList.remove('hidden');
+        document.getElementById('currentSessionTitle').textContent = data.session.title;
+    } else {
+        alert(data.message || 'تعذر بدء جلسة الجرد');
+    }
+}
+
+async function startCamera() {
+    try {
+        if (html5QrCode) { try { await html5QrCode.stop(); } catch(e) {} try { await html5QrCode.clear(); } catch(e) {} }
+        html5QrCode = new Html5Qrcode('reader');
+        if (!availableCameras.length) await loadCameras();
+        const selected = document.getElementById('cameraSelect').value;
+        let configCam = { facingMode: { ideal: 'environment' } };
+        if (selected) {
+            configCam = { deviceId: { exact: selected } };
+        } else if (availableCameras.length) {
+            const backCam = availableCameras.find(cam => {
+                const label = (cam.label || '').toLowerCase();
+                return label.includes('back') || label.includes('rear') || label.includes('environment') || label.includes('traseira') || label.includes('trasera');
+            });
+            configCam = backCam ? { deviceId: { exact: backCam.id } } : { facingMode: { ideal: 'environment' } };
+        }
+        await html5QrCode.start(configCam, {
+            fps: 10,
+            qrbox: { width: 280, height: 160 },
+            aspectRatio: 1.777778,
+            rememberLastUsedCamera: true,
+            disableFlip: false,
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+            formatsToSupport: [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39,
+                Html5QrcodeSupportedFormats.ITF,
+                Html5QrcodeSupportedFormats.QR_CODE
+            ]
+        }, onScanSuccess, () => {});
+        document.getElementById('startCameraBtn').classList.add('hidden');
+        document.getElementById('stopCameraBtn').classList.remove('hidden');
+    } catch (err) {
+        alert('تعذر تشغيل الكاميرا: ' + (err?.message || err));
+    }
+}
+
+function stopCamera() {
+    if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().then(() => {
+            document.getElementById('startCameraBtn').classList.remove('hidden');
+            document.getElementById('stopCameraBtn').classList.add('hidden');
+        }).catch(() => {});
+    }
+}
+
+function onScanSuccess(decodedText) {
+    processBarcode(decodedText);
+    stopCamera();
+}
+
+function searchBarcode() {
+    const barcode = document.getElementById('barcodeInput').value.trim();
+    if (barcode) processBarcode(barcode);
+}
+
+function populateExistingUnits(units, barcode) {
+    const select = document.getElementById('existingUnit');
+    select.innerHTML = '';
+    units.forEach((u, idx) => {
+        const opt = document.createElement('option');
+        opt.value = u.unit || 'حبه';
+        opt.dataset.pack = u.pack_size || u.conversion_factor || 1;
+        opt.dataset.conv = u.conversion_factor || u.pack_size || 1;
+        opt.dataset.barcode = u.barcode || barcode;
+        opt.dataset.cost = u.cost_price || 0;
+        opt.dataset.sell = u.sell_price || u.price || 0;
+        const convLabel = (u.conversion_factor || u.pack_size || 1) > 1 ? ` (= ${u.conversion_factor || u.pack_size} ${units[0]?.unit || 'أساسية'})` : ' (أساسية)';
+        opt.textContent = `${u.unit || 'حبه'}${convLabel}`;
+        if ((u.barcode || '') === barcode || idx === 0) opt.selected = true;
+        select.appendChild(opt);
+    });
+    
+    // Show units hierarchy
+    const hierarchy = document.getElementById('foundUnitsHierarchy');
+    const table = document.getElementById('foundUnitsTable');
+    if (units.length > 1) {
+        hierarchy.classList.remove('hidden');
+        table.innerHTML = '';
+        units.forEach((u, idx) => {
+            const isBase = idx === 0;
+            const conv = u.conversion_factor || u.pack_size || 1;
+            const row = document.createElement('div');
+            row.className = 'flex items-center gap-3 p-3 text-sm ' + (isBase ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : '');
+            row.innerHTML = `
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isBase ? 'bg-emerald-500 text-white' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'}">${isBase ? 'أساسية' : 'مستوى ' + (idx+1)}</span>
+                <span class="font-bold text-gray-800 dark:text-gray-100">${u.unit || 'حبه'}</span>
+                <span class="text-gray-400">${conv > 1 ? '= ' + conv + ' ' + (units[0]?.unit || '') : '= 1'}</span>
+                <span class="font-mono text-xs text-gray-400">${u.barcode || '-'}</span>
+                ${u.sell_price || u.price ? '<span class="text-emerald-600 font-bold mr-auto">' + (u.sell_price || u.price) + ' ر.ي</span>' : ''}
+            `;
+            table.appendChild(row);
+        });
+    } else {
+        hierarchy.classList.add('hidden');
+    }
+    
+    updateExistingUnitMeta();
+    calcBaseQty();
+}
+
+function updateExistingUnitMeta() {
+    const select = document.getElementById('existingUnit');
+    const opt = select.selectedOptions[0];
+    if (!opt) return;
+    document.getElementById('existingPackSize').value = opt.dataset.pack || 1;
+    document.getElementById('existingBarcode').value = opt.dataset.barcode || document.getElementById('existingBarcode').value;
+}
+
+function calcBaseQty() {
+    const select = document.getElementById('existingUnit');
+    const opt = select.selectedOptions[0];
+    if (!opt) return;
+    const conv = parseFloat(opt.dataset.conv) || 1;
+    const qty = parseFloat(document.getElementById('existingQuantity').value) || 0;
+    const baseQty = qty * conv;
+    const baseUnit = select.options[0]?.value || 'أساسية';
+    const display = document.getElementById('baseQtyDisplay');
+    if (display) {
+        if (conv > 1) {
+            display.textContent = `${baseQty} ${baseUnit}`;
+            display.parentElement.classList.remove('hidden');
+        } else {
+            display.textContent = `${qty} ${baseUnit}`;
+            display.parentElement.classList.add('hidden');
+        }
+    }
+}
+
+async function processBarcode(barcode) {
+    if (!currentSessionId) {
+        alert('ابدأ جلسة جرد أولاً');
+        return;
+    }
+    const resp = await fetch('/api/stocktake/scan', {
+        method: 'POST',
+        headers: csrfHeaders({'Content-Type': 'application/json'}),
+        body: JSON.stringify({ session_id: currentSessionId, barcode })
+    });
+    const data = await resp.json();
+
+    document.getElementById('barcodeInput').value = '';
+    document.getElementById('barcodeInput').focus();
+
+    if (data.found) {
+        lastFoundProduct = data.product;
+        lastFoundUnits = data.units || [];
+        document.getElementById('notFoundCard').classList.add('hidden');
+        document.getElementById('foundCard').classList.remove('hidden');
+        document.getElementById('foundName').textContent = data.product.name;
+        document.getElementById('foundBarcode').textContent = barcode;
+        document.getElementById('foundCategory').textContent = data.product.category_name || 'غير مصنف';
+        document.getElementById('foundStock').textContent = data.product.current_stock || 0;
+        document.getElementById('existingProductId').value = data.product.id;
+        document.getElementById('existingExpectedStock').value = data.product.current_stock || 0;
+        document.getElementById('existingProductName').value = data.product.name;
+        document.getElementById('existingBarcode').value = barcode;
+        document.getElementById('existingSessionId').value = currentSessionId || '';
+        document.getElementById('existingQuantity').value = 1;
+        document.getElementById('existingBatchNo').value = '';
+        document.getElementById('existingProductionDate').value = '';
+        document.getElementById('existingExpiryDate').value = '';
+        document.getElementById('existingNotes').value = '';
+        populateExistingUnits(lastFoundUnits, barcode);
+    } else {
+        lastMissingBarcode = barcode;
+        document.getElementById('foundCard').classList.add('hidden');
+        document.getElementById('notFoundCard').classList.remove('hidden');
+        document.getElementById('missingBarcode').textContent = barcode;
+    }
+}
+
+async function saveExistingItem() {
+    const form = document.getElementById('existingItemForm');
+    const productionDate = document.getElementById('existingProductionDate').value;
+    const expiryDate = document.getElementById('existingExpiryDate').value;
+    
+    if (!productionDate) {
+        alert('تاريخ الإنتاج مطلوب');
+        document.getElementById('existingProductionDate').focus();
+        return;
+    }
+    if (!expiryDate) {
+        alert('تاريخ الانتهاء مطلوب');
+        document.getElementById('existingExpiryDate').focus();
+        return;
+    }
+    
+    const fd = new FormData(form);
+    fd.append('session_id', currentSessionId || '');
+    fd.append('csrf_token', document.getElementById('csrfToken').value);
+    const resp = await fetch('/api/stocktake/save-item', { method: 'POST', headers: csrfHeaders(), body: fd });
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        alert('تعذر الحفظ: انتهت الجلسة أو رمز الحماية غير صالح');
+        return;
+    }
+    const data = await resp.json();
+    if (data.success) {
+        const selectedText = document.getElementById('existingUnit').selectedOptions[0]?.textContent || '';
+        const qty = document.getElementById('existingQuantity').value || 1;
+        const voicePath = data.voice_note_path || '';
+        const box = document.createElement('div');
+        box.className = 'p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50';
+        let html = `<div class="font-bold text-gray-800 dark:text-gray-100 text-sm">${document.getElementById('existingProductName').value}</div><div class="text-xs text-gray-500">${document.getElementById('existingBarcode').value} — ${selectedText} — كمية: ${qty}</div>`;
+        if (voicePath) {
+            html += `<audio controls class="mt-1 h-8 w-full"><source src="/${voicePath}"></audio>`;
+        }
+        box.innerHTML = html;
+        const list = document.getElementById('recentItemsList');
+        if (list.querySelector('p')) list.innerHTML = '';
+        list.prepend(box);
+        deleteRecording('existing');
+        form.reset();
+        document.getElementById('foundCard').classList.add('hidden');
+        alert(data.message || 'تم الحفظ');
+    } else {
+        alert(data.message || 'تعذر حفظ الجرد');
+    }
+}
+
+function openRequestModal() {
+    document.getElementById('requestBarcode').value = lastMissingBarcode;
+    document.getElementById('requestModal').classList.remove('hidden');
+    document.getElementById('requestModal').classList.add('flex');
+}
+
+function closeRequestModal() {
+    document.getElementById('requestModal').classList.add('hidden');
+    document.getElementById('requestModal').classList.remove('flex');
+    document.getElementById('requestForm').reset();
+}
+
+async function submitRequest() {
+    const form = document.getElementById('requestForm');
+    const fd = new FormData(form);
+    fd.append('session_id', currentSessionId || '');
+    fd.append('csrf_token', document.getElementById('csrfToken').value);
+    const resp = await fetch('/api/stocktake/request-product', { method: 'POST', headers: csrfHeaders(), body: fd });
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        alert('تعذر رفع الطلب: انتهت الجلسة أو رمز الحماية غير صالح');
+        return;
+    }
+    const data = await resp.json();
+    if (data.success) {
+        const name = document.getElementById('requestProductName').value || 'بدون اسم';
+        const catText = document.getElementById('requestCategory').selectedOptions[0]?.text || 'غير محدد';
+        const qty = document.getElementById('requestQuantity').value || 1;
+        const box = document.createElement('div');
+        box.className = 'p-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20';
+        box.innerHTML = `<div class="font-bold text-gray-800 dark:text-gray-100 text-sm">${name}</div><div class="text-xs text-gray-500">${lastMissingBarcode} — ${catText} — كمية: ${qty}</div>`;
+        const list = document.getElementById('recentRequestsList');
+        if (list.querySelector('p')) list.innerHTML = '';
+        list.prepend(box);
+        closeRequestModal();
+        document.getElementById('notFoundCard').classList.add('hidden');
+        alert(data.message || 'تم رفع الطلب');
+    } else {
+        alert(data.message || 'تعذر رفع الطلب');
+    }
+}
+
+let erUnitCount = 0;
+const erUnitOpts = `<option value="">-- اختر --</option>{% for u in units %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}`;
+
+async function openFullEditRequest() {
+    if (!lastFoundProduct) { alert('امسح صنف أولاً'); return; }
+    const p = lastFoundProduct;
+    
+    document.getElementById('erProductId').value = p.id;
+    document.getElementById('erName').value = p.name || '';
+    document.getElementById('erBarcode').value = p.barcode || '';
+    document.getElementById('erCategory').value = p.category_id || '';
+    document.getElementById('erUnit').value = p.unit || 'حبه';
+    document.getElementById('erBrand').value = p.brand || '';
+    document.getElementById('erCost').value = p.cost_price || 0;
+    document.getElementById('erSell').value = p.sell_price || p.price || 0;
+    document.getElementById('erNotes').value = '';
+    document.getElementById('erUnitsContainer').innerHTML = '';
+    erUnitCount = 0;
+    
+    // Save original data
+    document.getElementById('erOriginalData').value = JSON.stringify(p);
+    
+    // Load existing units
+    if (lastFoundUnits && lastFoundUnits.length > 1) {
+        for (let i = 1; i < lastFoundUnits.length; i++) {
+            const u = lastFoundUnits[i];
+            addErUnit(u.unit, u.barcode, u.conversion_factor || u.pack_size || 1, u.cost_price, u.sell_price);
+        }
+    }
+    
+    document.getElementById('editRequestModal').classList.remove('hidden');
+    document.getElementById('editRequestModal').classList.add('flex');
+}
+
+function closeFullEditRequest() {
+    document.getElementById('editRequestModal').classList.add('hidden');
+    document.getElementById('editRequestModal').classList.remove('flex');
+}
+
+let erBcCounter = 0;
+
+function erScanBarcode(inputId) {
+    // Use stocktake camera scanner
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const current = input.value;
+    const newVal = prompt('أدخل الباركود أو امسحه:', current);
+    if (newVal !== null) input.value = newVal;
+}
+
+function getErPrevUnitName() {
+    const allUnits = document.querySelectorAll('#erUnitsContainer > div[id^="erUnit_"]');
+    if (allUnits.length === 0) return document.getElementById('erUnit').value || 'الأساسية';
+    return allUnits[allUnits.length - 1].querySelector('.eru-unit')?.value || 'السابقة';
+}
+
+function updateErLabels() {
+    const allUnits = document.querySelectorAll('#erUnitsContainer > div[id^="erUnit_"]');
+    let cumFactor = 1;
+    const baseUnit = document.getElementById('erUnit').value || 'الأساسية';
+    allUnits.forEach((div, idx) => {
+        const label = div.querySelector('.eru-conv-label');
+        const prevName = idx === 0 ? baseUnit : allUnits[idx-1].querySelector('.eru-unit')?.value || 'السابقة';
+        if (label) label.textContent = `= كم ${prevName}`;
+        
+        const conv = parseInt(div.querySelector('.eru-conv')?.value) || 1;
+        cumFactor *= conv;
+        const totalLabel = div.querySelector('.eru-total');
+        if (totalLabel) totalLabel.textContent = `= ${cumFactor} ${baseUnit}`;
+        
+        const levelLabel = div.querySelector('.eru-level');
+        if (levelLabel) levelLabel.textContent = `المستوى ${idx + 2}`;
+    });
+}
+
+function addErUnit(unit, barcode, conv, cost, sell) {
+    erUnitCount++;
+    const n = erUnitCount;
+    const prevUnit = getErPrevUnitName();
+    const level = document.querySelectorAll('#erUnitsContainer > div[id^="erUnit_"]').length + 2;
+    
+    const div = document.createElement('div');
+    div.className = 'p-3 bg-white dark:bg-gray-800';
+    div.id = 'erUnit_' + n;
+    
+    erBcCounter++;
+    const bcId = 'erBc_' + erBcCounter;
+    
+    div.innerHTML = `
+        <div class="flex items-center gap-2 mb-2">
+            <span class="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 text-[10px] font-bold eru-level">المستوى ${level}</span>
+            <span class="text-xs text-emerald-600 font-bold eru-total"></span>
+            <button type="button" onclick="document.getElementById('erUnit_${n}').remove(); updateErLabels();" class="mr-auto text-red-400 hover:text-red-600 text-sm">🗑️ حذف</button>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+            <div><label class="text-xs text-gray-500">الوحدة</label>
+            <select class="form-input text-sm eru-unit" onchange="updateErLabels()">${erUnitOpts}</select></div>
+            <div><label class="text-xs text-gray-500 eru-conv-label">= كم ${prevUnit}</label>
+            <input type="number" class="form-input text-sm eru-conv" min="1" value="${conv||1}" oninput="updateErLabels()"></div>
+            <div><label class="text-xs text-gray-500">الباركود</label>
+            <div class="flex gap-1">
+                <input type="text" id="${bcId}" class="form-input text-sm eru-barcode font-mono flex-1" dir="ltr" value="${barcode||''}">
+                <button type="button" onclick="erScanBarcode('${bcId}')" class="px-2 bg-indigo-100 text-indigo-700 rounded-lg text-lg hover:bg-indigo-200">📷</button>
+            </div></div>
+            <div><label class="text-xs text-gray-500">التكلفة</label>
+            <input type="number" class="form-input text-sm eru-cost" min="0" step="1" value="${cost||''}"></div>
+            <div><label class="text-xs text-gray-500">البيع</label>
+            <input type="number" class="form-input text-sm eru-sell" min="0" step="1" value="${sell||''}"></div>
+        </div>
+    `;
+    document.getElementById('erUnitsContainer').appendChild(div);
+    if (unit) div.querySelector('.eru-unit').value = unit;
+    updateErLabels();
+}
+
+function getErUnits() {
+    const units = [];
+    document.querySelectorAll('#erUnitsContainer > div[id^="erUnit_"]').forEach(div => {
+        const unit = div.querySelector('.eru-unit')?.value;
+        if (!unit) return;
+        units.push({
+            unit,
+            conversion_factor: parseInt(div.querySelector('.eru-conv')?.value) || 1,
+            barcode: div.querySelector('.eru-barcode')?.value || '',
+            cost_price: div.querySelector('.eru-cost')?.value || null,
+            sell_price: div.querySelector('.eru-sell')?.value || null
+        });
+    });
+    return units;
+}
+
+async function submitFullEditRequest() {
+    const proposed = {
+        name: document.getElementById('erName').value,
+        barcode: document.getElementById('erBarcode').value,
+        category_id: document.getElementById('erCategory').value,
+        unit: document.getElementById('erUnit').value,
+        brand: document.getElementById('erBrand').value,
+        cost_price: document.getElementById('erCost').value,
+        sell_price: document.getElementById('erSell').value,
+        units: getErUnits()
+    };
+    
+    const notes = document.getElementById('erNotes').value.trim();
+    const details = JSON.stringify(proposed, null, 2);
+    
+    const resp = await fetch('/api/stocktake/edit-request', {
+        method: 'POST',
+        headers: csrfHeaders({'Content-Type': 'application/json'}),
+        body: JSON.stringify({
+            session_id: currentSessionId,
+            product_id: lastFoundProduct.id,
+            product_name: document.getElementById('erName').value,
+            barcode: document.getElementById('erBarcode').value,
+            request_type: 'full_edit',
+            details: (notes ? notes + '\n\n' : '') + '=== البيانات المقترحة ===\n' + details
+        })
+    });
+    const data = await resp.json();
+    if (data.success) {
+        alert('تم رفع طلب تعديل الصنف للمراجعة ✅');
+        closeFullEditRequest();
+    } else {
+        alert(data.message || 'فشل رفع الطلب');
+    }
+}
+
+async function closeSession() {
+    if (!currentSessionId) {
+        alert('لا توجد جلسة مفتوحة');
+        return;
+    }
+    if (!confirm('هل تريد إغلاق جلسة الجرد؟ لن تتمكن من إضافة عناصر جديدة بعد الإغلاق.')) return;
+    
+    const resp = await fetch('/api/stocktake/session/close', {
+        method: 'POST',
+        headers: csrfHeaders({'Content-Type': 'application/json'}),
+        body: JSON.stringify({ session_id: currentSessionId })
+    });
+    const data = await resp.json();
+    if (data.success) {
+        alert('تم إغلاق جلسة الجرد');
+        window.location.reload();
+    } else {
+        alert(data.message || 'تعذر إغلاق الجلسة');
+    }
+}
+
+// Voice Recording
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingType = null;
+
+async function toggleRecording(type) {
+    const btn = document.getElementById(type + 'RecordBtn');
+    const status = document.getElementById(type + 'RecordStatus');
+    const preview = document.getElementById(type + 'AudioPreview');
+    const deleteBtn = document.getElementById(type + 'DeleteAudio');
+    const fileInput = document.getElementById(type + 'VoiceNote');
+    
+    // Check if mediaDevices is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('التسجيل الصوتي غير متاح في هذا المتصفح.\nجرب استخدام Chrome أو Firefox.');
+        return;
+    }
+    
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        // Stop recording
+        mediaRecorder.stop();
+        btn.innerHTML = '🎤 تسجيل';
+        btn.classList.remove('bg-red-600', 'text-white');
+        btn.classList.add('bg-red-100', 'text-red-700');
+        status.textContent = 'جاري المعالجة...';
+    } else {
+        // Start recording
+        status.textContent = 'جاري طلب إذن الميكروفون...';
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // Check supported mime types
+            let mimeType = 'audio/webm';
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                mimeType = 'audio/mp4';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'audio/ogg';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = '';
+                    }
+                }
+            }
+            
+            mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+            audioChunks = [];
+            recordingType = type;
+            
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    audioChunks.push(e.data);
+                }
+            };
+            
+            mediaRecorder.onstop = () => {
+                const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+                const audioBlob = new Blob(audioChunks, { type: actualMimeType });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                preview.src = audioUrl;
+                preview.classList.remove('hidden');
+                deleteBtn.classList.remove('hidden');
+                status.textContent = '✅ تم التسجيل';
+                
+                // Convert to File for upload
+                const ext = actualMimeType.includes('mp4') ? '.mp4' : actualMimeType.includes('ogg') ? '.ogg' : '.webm';
+                const file = new File([audioBlob], 'voice_note' + ext, { type: actualMimeType });
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                fileInput.files = dataTransfer.files;
+                
+                // Stop all tracks
+                stream.getTracks().forEach(track => track.stop());
+            };
+            
+            mediaRecorder.onerror = (e) => {
+                status.textContent = '❌ خطأ في التسجيل';
+                console.error('MediaRecorder error:', e);
+            };
+            
+            mediaRecorder.start(100); // collect data every 100ms
+            btn.innerHTML = '⏹️ إيقاف';
+            btn.classList.remove('bg-red-100', 'text-red-700');
+            btn.classList.add('bg-red-600', 'text-white');
+            status.textContent = '🔴 جاري التسجيل...';
+        } catch (err) {
+            console.error('Microphone error:', err);
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                alert('تم رفض إذن الميكروفون.\nاسمح للموقع بالوصول للميكروفون من إعدادات المتصفح.');
+            } else if (err.name === 'NotFoundError') {
+                alert('لم يتم العثور على ميكروفون.\nتأكد من توصيل ميكروفون.');
+            } else if (err.name === 'NotReadableError' || err.name === 'AbortError') {
+                alert('الميكروفون مستخدم من تطبيق آخر.\nأغلق التطبيقات الأخرى التي تستخدم الميكروفون.');
+            } else {
+                alert('تعذر الوصول للميكروفون:\n' + (err.message || err.name || err));
+            }
+            status.textContent = '';
+        }
+    }
+}
+
+function deleteRecording(type) {
+    const preview = document.getElementById(type + 'AudioPreview');
+    const deleteBtn = document.getElementById(type + 'DeleteAudio');
+    const fileInput = document.getElementById(type + 'VoiceNote');
+    const status = document.getElementById(type + 'RecordStatus');
+    
+    preview.src = '';
+    preview.classList.add('hidden');
+    deleteBtn.classList.add('hidden');
+    fileInput.value = '';
+    status.textContent = '';
+    audioChunks = [];
+}
+
+function handleVoiceUpload(type, input) {
+    const preview = document.getElementById(type + 'AudioPreview');
+    const deleteBtn = document.getElementById(type + 'DeleteAudio');
+    const fileInput = document.getElementById(type + 'VoiceNote');
+    const status = document.getElementById(type + 'RecordStatus');
+    
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        const audioUrl = URL.createObjectURL(file);
+        preview.src = audioUrl;
+        preview.classList.remove('hidden');
+        deleteBtn.classList.remove('hidden');
+        status.textContent = '✅ تم رفع: ' + file.name;
+        
+        // Copy to hidden input for form submission
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        fileInput.files = dataTransfer.files;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('barcodeInput').focus();
+    loadCameras();
+    document.getElementById('existingUnit')?.addEventListener('change', updateExistingUnitMeta);
+});
+</script>
+{% endblock %}
