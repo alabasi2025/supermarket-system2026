@@ -1,0 +1,292 @@
+{% extends 'base.html' %}
+
+{% block title %}إدارة المخازن - سوبر ماركت العباسي{% endblock %}
+{% block page_title %}إدارة المخازن{% endblock %}
+{% block page_subtitle %}إدارة وتنظيم المخازن والفروع{% endblock %}
+
+{% block content %}
+<script id="warehouses-data" type="application/json">{{ warehouses_json|tojson }}</script>
+
+<div x-data="warehousesApp()" x-init="init()">
+
+    <!-- رسائل النظام -->
+    <div x-show="notification.show" x-cloak
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:leave="transition ease-in duration-200"
+         class="fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] max-w-lg w-full mx-4">
+        <div :class="{
+            'bg-green-50 border-green-400 text-green-800 dark:bg-green-900/50 dark:border-green-600 dark:text-green-200': notification.type === 'success',
+            'bg-red-50 border-red-400 text-red-800 dark:bg-red-900/50 dark:border-red-600 dark:text-red-200': notification.type === 'error'
+        }" class="border rounded-lg p-4 shadow-lg flex items-start gap-3">
+            <div class="flex-shrink-0 text-xl" x-text="notification.type === 'success' ? '✅' : '❌'"></div>
+            <div class="flex-1">
+                <div class="font-bold text-sm" x-text="notification.type === 'success' ? 'نجاح' : 'خطأ'"></div>
+                <div class="text-sm mt-1" x-text="notification.message"></div>
+                <div x-show="notification.detail" class="text-xs mt-1 opacity-75" x-text="notification.detail"></div>
+            </div>
+            <button @click="notification.show = false" class="flex-shrink-0 text-lg opacity-50 hover:opacity-100">&times;</button>
+        </div>
+    </div>
+    
+    <!-- إحصائيات -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="card p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">إجمالي المخازن</div>
+            <div class="text-2xl font-bold text-indigo-600" x-text="allWarehouses.length"></div>
+        </div>
+        <div class="card p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">مستودعات</div>
+            <div class="text-2xl font-bold text-blue-600" x-text="allWarehouses.filter(w => w.type === 'warehouse').length"></div>
+        </div>
+        <div class="card p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">فروع بيع</div>
+            <div class="text-2xl font-bold text-green-600" x-text="allWarehouses.filter(w => w.type === 'store').length"></div>
+        </div>
+    </div>
+
+    <!-- زر إضافة -->
+    <div class="flex justify-end mb-4">
+        <button @click="openAdd()" class="btn btn-primary">
+            <svg class="w-5 h-5 ml-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            إضافة مخزن
+        </button>
+    </div>
+
+    <!-- جدول المخازن -->
+    <div class="card overflow-hidden">
+        <table class="data-table w-full">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>الاسم</th>
+                    <th>النوع</th>
+                    <th>العنوان</th>
+                    <th>المسؤول</th>
+                    <th>الحالة</th>
+                    <th>إجراءات</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="w in allWarehouses" :key="w.id">
+                    <tr>
+                        <td x-text="w.id"></td>
+                        <td class="font-bold" x-text="w.name"></td>
+                        <td>
+                            <span x-show="w.type === 'warehouse'" class="badge badge-blue">مستودع</span>
+                            <span x-show="w.type === 'store'" class="badge badge-green">فرع بيع</span>
+                        </td>
+                        <td x-text="w.address || '-'"></td>
+                        <td x-text="w.manager_name || '-'"></td>
+                        <td>
+                            <span x-show="w.is_active" class="badge badge-green">نشط</span>
+                            <span x-show="!w.is_active" class="badge badge-red">معطل</span>
+                        </td>
+                        <td class="space-x-1 space-x-reverse">
+                            <button @click="openView(w)" class="text-blue-600 hover:text-blue-800 text-sm font-medium">عرض</button>
+                            <button @click="openEdit(w)" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">تعديل</button>
+                            <button @click="deleteWarehouse(w)" class="text-red-600 hover:text-red-800 text-sm font-medium">حذف</button>
+                        </td>
+                    </tr>
+                </template>
+                <tr x-show="allWarehouses.length === 0">
+                    <td colspan="7" class="text-center text-gray-400 py-8">لا توجد مخازن</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Modal عرض -->
+    <div x-show="showViewModal" x-cloak 
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="showViewModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+            <h3 class="text-lg font-bold mb-4">تفاصيل المخزن</h3>
+            
+            <div class="space-y-3">
+                <div class="flex justify-between border-b dark:border-gray-600 pb-2">
+                    <span class="text-gray-500">الاسم:</span>
+                    <span class="font-bold" x-text="viewData.name"></span>
+                </div>
+                <div class="flex justify-between border-b dark:border-gray-600 pb-2">
+                    <span class="text-gray-500">النوع:</span>
+                    <span x-text="viewData.type === 'warehouse' ? 'مستودع' : 'فرع بيع'"></span>
+                </div>
+                <div class="flex justify-between border-b dark:border-gray-600 pb-2">
+                    <span class="text-gray-500">العنوان:</span>
+                    <span x-text="viewData.address || '-'"></span>
+                </div>
+                <div class="flex justify-between border-b dark:border-gray-600 pb-2">
+                    <span class="text-gray-500">المسؤول:</span>
+                    <span x-text="viewData.manager_name || '-'"></span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-500">الحالة:</span>
+                    <span :class="viewData.is_active ? 'text-green-600' : 'text-red-600'" 
+                          x-text="viewData.is_active ? 'نشط' : 'معطل'"></span>
+                </div>
+            </div>
+
+            <div class="flex justify-end mt-6">
+                <button @click="showViewModal = false" class="btn">إغلاق</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal إضافة/تعديل -->
+    <div x-show="showFormModal" x-cloak 
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="showFormModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+            <h3 class="text-lg font-bold mb-4" x-text="editId ? 'تعديل مخزن' : 'إضافة مخزن جديد'"></h3>
+            
+            <!-- رسالة خطأ داخل النموذج -->
+            <div x-show="formError" x-cloak class="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-lg p-3 mb-4 text-sm">
+                <span x-text="formError"></span>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">اسم المخزن *</label>
+                    <input type="text" x-model="form.name" class="form-input w-full" placeholder="مثال: المخزن الجانبي">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">النوع *</label>
+                    <select x-model="form.type" class="form-input w-full">
+                        <option value="warehouse">مستودع</option>
+                        <option value="store">فرع بيع (سوبر)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">العنوان</label>
+                    <input type="text" x-model="form.address" class="form-input w-full" placeholder="العنوان (اختياري)">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">المسؤول</label>
+                    <select x-model="form.manager_id" class="form-input w-full">
+                        <option value="">-- بدون مسؤول --</option>
+                        {% for u in users %}
+                        <option value="{{ u.id }}">{{ u.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button @click="showFormModal = false; formError = ''" class="btn">إلغاء</button>
+                <button @click="saveWarehouse()" class="btn btn-primary" :disabled="!form.name || saving">
+                    <span x-show="!saving" x-text="editId ? 'تحديث' : 'حفظ'"></span>
+                    <span x-show="saving">جاري الحفظ...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function warehousesApp() {
+    return {
+        allWarehouses: [],
+        showFormModal: false,
+        showViewModal: false,
+        editId: null,
+        saving: false,
+        formError: '',
+        form: { name: '', type: 'warehouse', address: '', manager_id: '' },
+        viewData: {},
+        notification: { show: false, type: '', message: '', detail: '' },
+
+        init() {
+            try {
+                const el = document.getElementById('warehouses-data');
+                this.allWarehouses = el ? JSON.parse(el.textContent) : [];
+            } catch(e) {
+                console.error('Failed to parse warehouses data:', e);
+                this.allWarehouses = [];
+            }
+        },
+
+        notify(type, message, detail) {
+            this.notification = { show: true, type, message, detail: detail || '' };
+            setTimeout(() => { this.notification.show = false; }, 5000);
+        },
+
+        openAdd() {
+            this.editId = null;
+            this.formError = '';
+            this.form = { name: '', type: 'warehouse', address: '', manager_id: '' };
+            this.showFormModal = true;
+        },
+
+        openEdit(w) {
+            this.editId = w.id;
+            this.formError = '';
+            this.form = { 
+                name: w.name, 
+                type: w.type, 
+                address: w.address || '', 
+                manager_id: w.manager_id ? String(w.manager_id) : '' 
+            };
+            this.showFormModal = true;
+        },
+
+        openView(w) {
+            this.viewData = { ...w };
+            this.showViewModal = true;
+        },
+
+        csrfToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.content || '';
+        },
+
+        async saveWarehouse() {
+            this.formError = '';
+            this.saving = true;
+            const url = this.editId ? '/api/warehouses-crud/' + this.editId : '/api/warehouses-crud';
+            const method = this.editId ? 'PUT' : 'POST';
+            try {
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrfToken() },
+                    body: JSON.stringify(this.form)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this.showFormModal = false;
+                    this.notify('success', data.message || 'تمت العملية بنجاح');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    this.formError = data.message || 'حدث خطأ غير معروف';
+                    this.notify('error', data.message || 'فشلت العملية', 'الكود: ' + res.status);
+                }
+            } catch(e) {
+                this.formError = 'خطأ في الاتصال بالسيرفر: ' + e.message;
+                this.notify('error', 'خطأ في الاتصال', e.message);
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async deleteWarehouse(w) {
+            if (!confirm('هل تريد حذف المخزن "' + w.name + '"؟')) return;
+            try {
+                const res = await fetch('/api/warehouses-crud/' + w.id, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRF-Token': this.csrfToken() }
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this.notify('success', data.message || 'تم الحذف');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    this.notify('error', data.message || 'فشل الحذف', 'الكود: ' + res.status);
+                }
+            } catch(e) {
+                this.notify('error', 'خطأ في الاتصال', e.message);
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

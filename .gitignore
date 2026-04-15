@@ -1,26 +1,22 @@
+# Test & debug files
+check_*.py
+debug_*.py
+debug_*.json
+fix_*.py
+test_*.py
+full_*.py
+migrate*.py
+quick_test.py
+verify_migration.py
+plan_check.py
+*.json
+!package.json
+!package-lock.json
 # Python
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-venv/
-env/
-.env
-
-# Database
-*.db
-*.sqlite3
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
+*.pyc
+# SSL
+cert.pem
+key.pem
+# Uploads
+static/uploads/

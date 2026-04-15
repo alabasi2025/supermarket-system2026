@@ -1,0 +1,368 @@
+{% extends 'base.html' %}
+
+{% block title %}وحدات العرض - نظام إدارة السوبرماركت{% endblock %}
+{% block page_title %}وحدات العرض{% endblock %}
+{% block page_subtitle %}إدارة الستاندات والثلاجات والفريزرات ووحدات العرض الأخرى{% endblock %}
+
+{% block header_actions %}
+{% if session.user_id == 1 %}
+<button onclick="openAddModal()"
+        class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    <span>إضافة وحدة عرض</span>
+</button>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+
+<div class="space-y-6">
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">إجمالي الوحدات</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-gray-100" id="statTotal">{{ stats.total }}</div>
+        </div>
+        <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">إجمالي الرفوف</div>
+            <div class="text-2xl font-bold text-blue-600 dark:text-blue-400" id="statShelves">{{ stats.total_shelves }}</div>
+        </div>
+        <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">وحدات نشطة</div>
+            <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400" id="statActive">{{ stats.active }}</div>
+        </div>
+        <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">الأنواع</div>
+            <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mt-1" id="statTypes">
+                {% for t, c in stats.types.items() %}
+                <span class="inline-block px-2 py-0.5 rounded-full text-xs mr-1 mb-1 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">{{ t }}: {{ c }}</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Display Units Table -->
+    <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full table-hover" id="unitsTable">
+                <thead class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                    <tr>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600 dark:text-gray-300">#</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600 dark:text-gray-300">الاسم</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600 dark:text-gray-300">النوع</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600 dark:text-gray-300">عدد الرفوف</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600 dark:text-gray-300">ملاحظات</th>
+                        <th class="px-6 py-4 text-right text-sm font-semibold text-gray-600 dark:text-gray-300">الحالة</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-gray-600 dark:text-gray-300">إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-800" id="unitsTableBody">
+                    {% for unit in display_units %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors" id="unitRow_{{ unit.id }}">
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ loop.index }}</td>
+                        <td class="px-6 py-4 font-medium text-gray-800 dark:text-gray-100">{{ unit.name }}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                {% if unit.type == 'fridge' %}bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300
+                                {% elif unit.type == 'freezer' %}bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300
+                                {% elif unit.type == 'glass_stand' %}bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300
+                                {% elif unit.type == 'stand' %}bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300
+                                {% else %}bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300{% endif %}">
+                                {{ type_labels.get(unit.type, unit.type) }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{{ unit.shelves_count }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-[200px] truncate">{{ unit.notes or '-' }}</td>
+                        <td class="px-6 py-4">
+                            {% if unit.is_active %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">نشط</span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">معطل</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="toggleShelves({{ unit.id }})" class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors" title="عرض الرفوف">
+                                    <svg class="w-5 h-5 transition-transform" id="expandIcon_{{ unit.id }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                    </svg>
+                                </button>
+                                {% if session.user_id == 1 %}
+                                <button onclick="openEditModal({{ unit.id }})" class="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" title="تعديل">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                </button>
+                                <button onclick="deleteUnit({{ unit.id }}, '{{ unit.name }}')" class="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" title="حذف">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Shelves sub-table (hidden by default) -->
+                    <tr id="shelvesRow_{{ unit.id }}" class="hidden">
+                        <td colspan="7" class="px-6 py-4 bg-gray-50/50 dark:bg-gray-800/30">
+                            <div class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                <div class="px-4 py-3 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                                    <h4 class="font-bold text-sm text-gray-700 dark:text-gray-300">📦 رفوف {{ unit.name }}</h4>
+                                </div>
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="bg-gray-50 dark:bg-gray-800/50">
+                                            <th class="px-4 py-2 text-right text-xs font-semibold text-gray-500 dark:text-gray-400">رقم الرف</th>
+                                            <th class="px-4 py-2 text-right text-xs font-semibold text-gray-500 dark:text-gray-400">الاسم</th>
+                                            <th class="px-4 py-2 text-right text-xs font-semibold text-gray-500 dark:text-gray-400">ملاحظات</th>
+                                            <th class="px-4 py-2 text-right text-xs font-semibold text-gray-500 dark:text-gray-400">الحالة</th>
+                                            <th class="px-4 py-2 text-center text-xs font-semibold text-gray-500 dark:text-gray-400">إجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100 dark:divide-gray-800" id="shelvesBody_{{ unit.id }}">
+                                        {% for shelf in unit.shelves %}
+                                        <tr id="shelfRow_{{ shelf.id }}">
+                                            <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400">{{ shelf.shelf_number }}</td>
+                                            <td class="px-4 py-2">
+                                                <input type="text" value="{{ shelf.name }}" id="shelfName_{{ shelf.id }}" class="text-sm border border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-500 rounded-lg px-2 py-1 bg-transparent w-full font-medium text-gray-800 dark:text-gray-100" onblur="updateShelf({{ shelf.id }})">
+                                            </td>
+                                            <td class="px-4 py-2">
+                                                <input type="text" value="{{ shelf.notes or '' }}" id="shelfNotes_{{ shelf.id }}" placeholder="ملاحظة..." class="text-sm border border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-indigo-500 rounded-lg px-2 py-1 bg-transparent w-full text-gray-500 dark:text-gray-400" onblur="updateShelf({{ shelf.id }})">
+                                            </td>
+                                            <td class="px-4 py-2">
+                                                {% if shelf.is_active %}
+                                                <span class="text-xs text-emerald-600 dark:text-emerald-400">نشط</span>
+                                                {% else %}
+                                                <span class="text-xs text-red-600 dark:text-red-400">معطل</span>
+                                                {% endif %}
+                                            </td>
+                                            <td class="px-4 py-2 text-center">
+                                                <button onclick="updateShelf({{ shelf.id }})" class="text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-400">💾 حفظ</button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-400 dark:text-gray-600">
+                            <div class="text-4xl mb-2">📦</div>
+                            <p>لا توجد وحدات عرض بعد</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div id="unitModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-t-2xl">
+            <div class="flex items-center justify-between">
+                <h3 class="text-xl font-bold" id="modalTitle">إضافة وحدة عرض</h3>
+                <button onclick="closeModal()" class="p-2 hover:bg-white/20 rounded-xl transition-colors">✕</button>
+            </div>
+        </div>
+        <form id="unitForm" class="p-6 space-y-4">
+            <input type="hidden" id="editUnitId" value="">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">اسم الوحدة <span class="text-red-500">*</span></label>
+                <input type="text" id="unitName" class="form-input" placeholder="مثال: ستاند المشروبات، ثلاجة الألبان" required>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">النوع <span class="text-red-500">*</span></label>
+                <select id="unitType" class="form-input" required>
+                    <option value="">-- اختر النوع --</option>
+                    <option value="stand">ستاند</option>
+                    <option value="glass_stand">ستاند زجاجي</option>
+                    <option value="fridge">ثلاجة</option>
+                    <option value="freezer">فريزر</option>
+                    <option value="other">أخرى</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عدد الرفوف <span class="text-red-500">*</span></label>
+                <input type="number" id="unitShelvesCount" class="form-input" min="1" value="1" required>
+                <p class="text-xs text-gray-400 mt-1" id="shelvesNote">سيتم إنشاء الرفوف تلقائياً (الرف 1، الرف 2، ...)</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ملاحظات</label>
+                <textarea id="unitNotes" class="form-input" rows="3" placeholder="أي ملاحظات إضافية عن وحدة العرض"></textarea>
+            </div>
+        </form>
+        <div class="p-6 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-3">
+            <button onclick="closeModal()" class="btn">إلغاء</button>
+            <button onclick="saveUnit()" class="btn btn-primary">💾 حفظ</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const csrfToken = document.getElementById('csrfToken').value;
+const typeLabels = {
+    'stand': 'ستاند',
+    'glass_stand': 'ستاند زجاجي',
+    'fridge': 'ثلاجة',
+    'freezer': 'فريزر',
+    'other': 'أخرى'
+};
+const typeColors = {
+    'stand': 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+    'glass_stand': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+    'fridge': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+    'freezer': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300',
+    'other': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+};
+
+let allUnits = {{ display_units_json | safe }};
+
+function csrfHeaders() {
+    return {'X-CSRF-Token': csrfToken};
+}
+
+function openAddModal() {
+    document.getElementById('editUnitId').value = '';
+    document.getElementById('modalTitle').textContent = 'إضافة وحدة عرض';
+    document.getElementById('unitName').value = '';
+    document.getElementById('unitType').value = '';
+    document.getElementById('unitShelvesCount').value = 1;
+    document.getElementById('unitNotes').value = '';
+    document.getElementById('shelvesNote').textContent = 'سيتم إنشاء الرفوف تلقائياً (الرف 1، الرف 2، ...)';
+    document.getElementById('unitModal').classList.remove('hidden');
+    document.getElementById('unitModal').classList.add('flex');
+}
+
+function openEditModal(unitId) {
+    const unit = allUnits.find(u => u.id === unitId);
+    if (!unit) return;
+    document.getElementById('editUnitId').value = unitId;
+    document.getElementById('modalTitle').textContent = 'تعديل وحدة العرض';
+    document.getElementById('unitName').value = unit.name;
+    document.getElementById('unitType').value = unit.type;
+    document.getElementById('unitShelvesCount').value = unit.shelves_count;
+    document.getElementById('unitNotes').value = unit.notes || '';
+    document.getElementById('shelvesNote').textContent = 'تغيير عدد الرفوف سيضيف أو يحذف رفوف حسب الحاجة';
+    document.getElementById('unitModal').classList.remove('hidden');
+    document.getElementById('unitModal').classList.add('flex');
+}
+
+function closeModal() {
+    document.getElementById('unitModal').classList.add('hidden');
+    document.getElementById('unitModal').classList.remove('flex');
+}
+
+function toggleShelves(unitId) {
+    const row = document.getElementById('shelvesRow_' + unitId);
+    const icon = document.getElementById('expandIcon_' + unitId);
+    if (row.classList.contains('hidden')) {
+        row.classList.remove('hidden');
+        icon.style.transform = 'rotate(180deg)';
+    } else {
+        row.classList.add('hidden');
+        icon.style.transform = '';
+    }
+}
+
+async function saveUnit() {
+    const unitId = document.getElementById('editUnitId').value;
+    const name = document.getElementById('unitName').value.trim();
+    const type = document.getElementById('unitType').value;
+    const shelvesCount = parseInt(document.getElementById('unitShelvesCount').value) || 1;
+    const notes = document.getElementById('unitNotes').value.trim();
+
+    if (!name) { showToast('اسم الوحدة مطلوب', 'warning'); return; }
+    if (!type) { showToast('النوع مطلوب', 'warning'); return; }
+    if (shelvesCount < 1) { showToast('عدد الرفوف يجب أن يكون 1 على الأقل', 'warning'); return; }
+
+    const isEdit = !!unitId;
+    if (isEdit) {
+        const unit = allUnits.find(u => u.id === parseInt(unitId));
+        if (unit && shelvesCount < unit.shelves_count) {
+            if (!confirm(`تقليل عدد الرفوف من ${unit.shelves_count} إلى ${shelvesCount} سيحذف الرفوف الزائدة. متأكد؟`)) return;
+        }
+    }
+
+    const url = isEdit ? `/api/display-units/${unitId}` : '/api/display-units';
+    const method = isEdit ? 'PUT' : 'POST';
+
+    try {
+        const resp = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({ name, type, shelves_count: shelvesCount, notes })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            showToast(data.message || 'تمت العملية بنجاح', 'success');
+            setTimeout(() => location.reload(), 800);
+        } else {
+            showToast(data.message || 'فشلت العملية', 'error');
+        }
+    } catch(e) {
+        showToast('خطأ في الاتصال', 'error');
+    }
+}
+
+async function deleteUnit(unitId, name) {
+    if (!confirm(`هل تريد تعطيل وحدة العرض "${name}"؟`)) return;
+    try {
+        const resp = await fetch(`/api/display-units/${unitId}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-Token': csrfToken
+            }
+        });
+        const data = await resp.json();
+        if (data.success) {
+            showToast(data.message || 'تم التعطيل', 'success');
+            setTimeout(() => location.reload(), 800);
+        } else {
+            showToast(data.message || 'فشل التعطيل', 'error');
+        }
+    } catch(e) {
+        showToast('خطأ في الاتصال', 'error');
+    }
+}
+
+async function updateShelf(shelfId) {
+    const nameEl = document.getElementById('shelfName_' + shelfId);
+    const notesEl = document.getElementById('shelfNotes_' + shelfId);
+    if (!nameEl) return;
+
+    try {
+        const resp = await fetch(`/api/shelves/${shelfId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({
+                name: nameEl.value.trim(),
+                notes: notesEl ? notesEl.value.trim() : ''
+            })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            showToast('تم تحديث الرف', 'success');
+        } else {
+            showToast(data.message || 'فشل تحديث الرف', 'error');
+        }
+    } catch(e) {
+        showToast('خطأ في الاتصال', 'error');
+    }
+}
+</script>
+{% endblock %}

@@ -195,7 +195,7 @@
                             <tr>
                                 <td class="font-mono font-bold text-indigo-600">#{{ inv.id }}</td>
                                 <td>{{ inv.supplier_name or '—' }}</td>
-                                <td class="text-slate-500">{{ inv.created_at[:10] if inv.created_at else '—' }}</td>
+                                <td class="text-slate-500">{{ inv.created_at.strftime('%Y-%m-%d') if inv.created_at else '—' }}</td>
                                 <td>
                                     {% if inv.status == 'completed' %}
                                         <span class="badge badge-green">مكتمل</span>

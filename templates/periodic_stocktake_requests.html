@@ -1,0 +1,588 @@
+﻿{% extends 'base.html' %}
+{% block title %}طلبات الأصناف{% endblock %}
+{% block page_title %}طلبات الأصناف{% endblock %}
+{% block page_subtitle %}طلبات إضافة أصناف جديدة وطلبات تعديل الأصناف الموجودة{% endblock %}
+
+{% block content %}
+<input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+
+<div class="max-w-7xl mx-auto space-y-6">
+    <!-- Tabs -->
+    <div class="card p-4">
+        <div class="flex flex-wrap gap-2">
+            <a href="/periodic-stocktake/requests?status=all" class="px-4 py-2 rounded-xl font-bold text-sm transition-colors {{ 'bg-indigo-600 text-white' if status_filter=='all' else 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400' }}">
+                الكل <span class="px-1.5 py-0.5 rounded-full text-[10px] {{ 'bg-white/20' if status_filter=='all' else 'bg-gray-200 dark:bg-gray-700' }}">{{ counts.all }}</span>
+            </a>
+            <a href="/periodic-stocktake/requests?status=pending" class="px-4 py-2 rounded-xl font-bold text-sm transition-colors {{ 'bg-amber-500 text-white' if status_filter=='pending' else 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400' }}">
+                ⏳ قيد المراجعة <span class="px-1.5 py-0.5 rounded-full text-[10px] {{ 'bg-white/20' if status_filter=='pending' else 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' }}">{{ counts.pending }}</span>
+            </a>
+            <a href="/periodic-stocktake/requests?status=approved" class="px-4 py-2 rounded-xl font-bold text-sm transition-colors {{ 'bg-emerald-500 text-white' if status_filter=='approved' else 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400' }}">
+                ✅ معتمد <span class="px-1.5 py-0.5 rounded-full text-[10px] {{ 'bg-white/20' if status_filter=='approved' else 'bg-emerald-100 text-emerald-700' }}">{{ counts.approved }}</span>
+            </a>
+            <a href="/periodic-stocktake/requests?status=rejected" class="px-4 py-2 rounded-xl font-bold text-sm transition-colors {{ 'bg-red-500 text-white' if status_filter=='rejected' else 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400' }}">
+                ❌ مرفوض <span class="px-1.5 py-0.5 rounded-full text-[10px] {{ 'bg-white/20' if status_filter=='rejected' else 'bg-red-100 text-red-700' }}">{{ counts.rejected }}</span>
+            </a>
+            {% if counts.duplicates > 0 %}
+            <a href="/periodic-stocktake/requests?status=pending&dup=1" class="px-4 py-2 rounded-xl font-bold text-sm transition-colors bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400 border border-orange-300">
+                🔁 مكررة <span class="px-1.5 py-0.5 rounded-full text-[10px] bg-orange-200 text-orange-800">{{ counts.duplicates }}</span>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Requests list -->
+    {% for req in requests %}
+    <div class="card overflow-hidden" id="request-{{ req.id }}">
+        <div class="p-5 flex flex-col md:flex-row md:items-start gap-4">
+            <!-- Info -->
+            <div class="flex-1 space-y-3">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="text-2xl font-mono font-bold text-gray-800 dark:text-gray-100">{{ req.barcode }}</span>
+                    {% if req.is_duplicate %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-300">
+                        🔁 مكرر مع: {% for dup_id in req.duplicate_with %}<a href="#request-{{ dup_id }}" onclick="document.getElementById('request-{{ dup_id }}').style.outline='3px solid orange'; setTimeout(()=>document.getElementById('request-{{ dup_id }}').style.outline='',2000);" class="underline font-bold hover:text-orange-900">#{{ dup_id }}</a>{% if not loop.last %}، {% endif %}{% endfor %}
+                    </span>
+                    {% endif %}
+                    {% if req.status == 'pending' %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">⏳ قيد المراجعة</span>
+                    {% elif req.status == 'approved' %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">✅ معتمد</span>
+                    {% elif req.status == 'rejected' %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">❌ مرفوض</span>
+                    {% endif %}
+                </div>
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div>
+                        <span class="text-gray-400 text-xs">اسم الصنف</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.product_name or 'غير محدد' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">القسم</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.category_name or 'غير محدد' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">الوحدة</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.unit or '-' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">الكمية</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.quantity_counted or 1 }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">سعر التكلفة</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.cost_price or '-' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">سعر البيع</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.sell_price or '-' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">تاريخ الإنتاج</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.production_date.strftime('%Y-%m-%d') if req.production_date else '-' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">تاريخ الانتهاء</span>
+                        <p class="font-bold {% if req.expiry_date and req.expiry_date.strftime('%Y-%m-%d') < '2026-06-01' %}text-red-600 dark:text-red-400{% else %}text-gray-800 dark:text-gray-100{% endif %}">
+                            {{ req.expiry_date.strftime('%Y-%m-%d') if req.expiry_date else '-' }}
+                        </p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">الباتش</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.batch_no or '-' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">الجلسة</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.session_title or '-' }}</p>
+                    </div>
+                </div>
+                
+                <div class="flex flex-wrap gap-4 text-xs text-gray-400">
+                    <span>رفعه: <strong>{{ req.requested_by_name or 'غير معروف' }}</strong></span>
+                    <span>التاريخ: <strong>{{ req.created_at.strftime('%Y-%m-%d %H:%M') if req.created_at else '-' }}</strong></span>
+                    {% if req.reviewed_by_name %}
+                    <span>راجعه: <strong>{{ req.reviewed_by_name }}</strong></span>
+                    {% endif %}
+                    {% if req.notes %}
+                    <span>ملاحظة: <strong>{{ req.notes }}</strong></span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Actions -->
+            {% if req.status == 'pending' %}
+            <div class="flex flex-col gap-2 shrink-0">
+                {% if req.is_duplicate %}
+                <button onclick="deleteReq({{ req.id }})" class="px-5 py-2.5 rounded-xl bg-orange-100 text-orange-700 font-bold text-sm hover:bg-orange-200 transition-colors">
+                    🗑️ حذف المكرر
+                </button>
+                {% endif %}
+                <button onclick="showEditModal({{ req.id }}, {
+                    barcode: '{{ req.barcode or '' }}',
+                    product_name: '{{ (req.product_name or '')|replace("'", "\\'") }}',
+                    category_id: '{{ req.category_id or '' }}',
+                    unit: '{{ req.unit or '' }}',
+                    quantity_counted: '{{ req.quantity_counted or 1 }}',
+                    pack_size: '{{ req.pack_size or 1 }}',
+                    cost_price: '{{ req.cost_price or '' }}',
+                    sell_price: '{{ req.sell_price or '' }}',
+                    production_date: '{{ req.production_date.strftime('%Y-%m-%d') if req.production_date else '' }}',
+                    expiry_date: '{{ req.expiry_date.strftime('%Y-%m-%d') if req.expiry_date else '' }}',
+                    batch_no: '{{ req.batch_no or '' }}',
+                    notes: '{{ (req.notes or '')|replace("'", "\\'") }}'
+                })" class="px-5 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-sm hover:bg-indigo-600 transition-colors shadow-md">
+                    ✏️ تعديل الطلب
+                </button>
+                <button onclick="approveRequest({{ req.id }})" class="px-5 py-2.5 rounded-xl bg-emerald-500 text-white font-bold text-sm hover:bg-emerald-600 transition-colors shadow-md">
+                    ✅ اعتماد وإضافة صنف
+                </button>
+                <button onclick="showLinkModal({{ req.id }}, '{{ req.barcode }}')" class="px-5 py-2.5 rounded-xl bg-blue-500 text-white font-bold text-sm hover:bg-blue-600 transition-colors shadow-md">
+                    🔗 ربط بصنف موجود
+                </button>
+                <button onclick="rejectRequest({{ req.id }})" class="px-5 py-2.5 rounded-xl bg-red-100 text-red-700 font-bold text-sm hover:bg-red-200 transition-colors">
+                    ❌ رفض
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="card p-12 text-center">
+        <p class="text-gray-400 text-lg">لا توجد طلبات</p>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-5 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-t-2xl flex justify-between items-center">
+            <h3 class="text-lg font-bold">✏️ تعديل الطلب</h3>
+            <button onclick="closeEditModal()" class="text-white/80 hover:text-white text-xl">✕</button>
+        </div>
+        <div class="p-5 space-y-4">
+            <input type="hidden" id="editId">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">الباركود</label>
+                    <input type="text" id="editBarcode" class="form-input font-mono bg-gray-50 dark:bg-gray-800" readonly>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">اسم الصنف</label>
+                    <input type="text" id="editName" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">القسم</label>
+                    <select id="editCategory" class="form-input">
+                        <option value="">-- اختر --</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">الوحدة الأساسية</label>
+                    <select id="editUnit" class="form-input">
+                        <option value="">-- اختر --</option>
+                        {% for u in units %}
+                        <option value="{{ u.name }}">{{ u.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">الكمية</label>
+                    <input type="number" id="editQty" class="form-input" min="0" step="0.01">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">العبوة</label>
+                    <input type="number" id="editPackSize" class="form-input" min="1">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">سعر التكلفة</label>
+                    <input type="number" id="editCost" class="form-input" min="0" step="0.01">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">سعر البيع</label>
+                    <input type="number" id="editSell" class="form-input" min="0" step="0.01">
+                </div>
+                
+                <!-- وحدات إضافية -->
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">📦 وحدات إضافية (إذا الصنف له أكثر من وحدة)</label>
+                    <div id="extraUnitsContainer" class="space-y-2"></div>
+                    <button type="button" onclick="addExtraUnit()" class="mt-2 px-4 py-2 rounded-xl bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 text-sm font-bold transition-colors">
+                        ➕ إضافة وحدة
+                    </button>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">تاريخ الإنتاج</label>
+                    <input type="date" id="editProduction" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">تاريخ الانتهاء</label>
+                    <input type="date" id="editExpiry" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">الباتش</label>
+                    <input type="text" id="editBatch" class="form-input">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">ملاحظة</label>
+                    <textarea id="editNotes" class="form-input" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button onclick="closeEditModal()" class="btn btn-secondary">إلغاء</button>
+                <button onclick="saveEdit()" class="btn btn-primary">💾 حفظ التعديلات</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- طلبات تعديل الأصناف الموجودة -->
+{% if edit_requests %}
+<div class="max-w-7xl mx-auto mt-8 space-y-4">
+    <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 px-2">📝 طلبات تعديل الأصناف الموجودة ({{ edit_requests|length }})</h2>
+    
+    {% for req in edit_requests %}
+    <div class="card overflow-hidden">
+        <div class="p-5 flex flex-col md:flex-row md:items-start gap-4">
+            <div class="flex-1 space-y-3">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="font-bold text-gray-800 dark:text-gray-100 text-lg">{{ req.product_name or req.current_name }}</span>
+                    <span class="font-mono text-sm text-gray-500">{{ req.barcode }}</span>
+                    {% if req.status == 'pending' %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">⏳ قيد المراجعة</span>
+                    {% elif req.status == 'done' %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">✅ تم</span>
+                    {% elif req.status == 'rejected' %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">❌ مرفوض</span>
+                    {% endif %}
+                </div>
+                
+                <div class="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl space-y-3">
+                    {% if req.note %}
+                    <p class="text-sm text-gray-700 dark:text-gray-300">💬 {{ req.note }}</p>
+                    {% endif %}
+                    
+                    {% if req.proposed %}
+                    {% set p = req.proposed %}
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                        {% if p.name %}<div><span class="text-gray-400 text-xs">الاسم</span><p class="font-bold text-gray-800 dark:text-gray-100">{{ p.name }}</p></div>{% endif %}
+                        {% if p.barcode %}<div><span class="text-gray-400 text-xs">الباركود</span><p class="font-bold text-gray-800 dark:text-gray-100 font-mono">{{ p.barcode }}</p></div>{% endif %}
+                        {% if p.unit %}<div><span class="text-gray-400 text-xs">الوحدة الأساسية</span><p class="font-bold text-gray-800 dark:text-gray-100">{{ p.unit }}</p></div>{% endif %}
+                        {% if p.brand %}<div><span class="text-gray-400 text-xs">العائلة</span><p class="font-bold text-gray-800 dark:text-gray-100">{{ p.brand }}</p></div>{% endif %}
+                        {% if p.cost_price %}<div><span class="text-gray-400 text-xs">التكلفة</span><p class="font-bold text-gray-800 dark:text-gray-100">{{ p.cost_price }}</p></div>{% endif %}
+                        {% if p.sell_price %}<div><span class="text-gray-400 text-xs">البيع</span><p class="font-bold text-gray-800 dark:text-gray-100">{{ p.sell_price }}</p></div>{% endif %}
+                    </div>
+                    
+                    {% if p.units %}
+                    <div class="border border-blue-200 dark:border-blue-800 rounded-xl overflow-hidden">
+                        <div class="p-2 bg-blue-100 dark:bg-blue-900/30 text-xs font-bold text-blue-700 dark:text-blue-300">📦 الوحدات المقترحة</div>
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50 dark:bg-gray-800">
+                                <tr>
+                                    <th class="p-2 text-right text-xs text-gray-500">الوحدة</th>
+                                    <th class="p-2 text-right text-xs text-gray-500">التحويل</th>
+                                    <th class="p-2 text-right text-xs text-gray-500">الباركود</th>
+                                    <th class="p-2 text-right text-xs text-gray-500">التكلفة</th>
+                                    <th class="p-2 text-right text-xs text-gray-500">البيع</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for u in p.units %}
+                                <tr class="border-t border-gray-100 dark:border-gray-800">
+                                    <td class="p-2 font-bold text-gray-800 dark:text-gray-100">{{ u.unit or '-' }}</td>
+                                    <td class="p-2 text-emerald-600 font-bold">{{ u.conversion_factor or 1 }} {{ p.unit or 'أساسية' }}</td>
+                                    <td class="p-2 font-mono text-gray-500 text-xs">{{ u.barcode or '-' }}</td>
+                                    <td class="p-2 text-gray-700 dark:text-gray-300">{{ u.cost_price or '-' }}</td>
+                                    <td class="p-2 text-gray-700 dark:text-gray-300">{{ u.sell_price or '-' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                    
+                    {% else %}
+                    <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ req.details }}</p>
+                    {% endif %}
+                </div>
+                
+                <div class="flex flex-wrap gap-4 text-xs text-gray-400">
+                    <span>نوع الطلب: <strong>{{ req.request_type }}</strong></span>
+                    <span>رفعه: <strong>{{ req.requested_by_name or 'غير معروف' }}</strong></span>
+                    <span>التاريخ: <strong>{{ req.created_at.strftime('%Y-%m-%d %H:%M') if req.created_at else '-' }}</strong></span>
+                    {% if req.reviewed_by_name %}
+                    <span>راجعه: <strong>{{ req.reviewed_by_name }}</strong></span>
+                    {% endif %}
+                </div>
+            </div>
+            
+            {% if req.status == 'pending' %}
+            <div class="flex flex-col gap-2 shrink-0">
+                <a href="/products?q={{ req.barcode }}" class="px-5 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-sm hover:bg-indigo-600 transition-colors shadow-md text-center">
+                    ✏️ فتح الصنف وتعديله
+                </a>
+                <button onclick="markEditDone({{ req.id }})" class="px-5 py-2.5 rounded-xl bg-emerald-500 text-white font-bold text-sm hover:bg-emerald-600 transition-colors shadow-md">
+                    ✅ تم التعديل
+                </button>
+                <button onclick="rejectEditReq({{ req.id }})" class="px-5 py-2.5 rounded-xl bg-red-100 text-red-700 font-bold text-sm hover:bg-red-200 transition-colors">
+                    ❌ رفض
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Link Modal -->
+<div id="linkModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg">
+        <div class="p-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+            <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">🔗 ربط بصنف موجود</h3>
+            <button onclick="closeLinkModal()" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        </div>
+        <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-500">الباركود: <strong id="linkBarcode" class="font-mono"></strong></p>
+            <input type="hidden" id="linkRequestId">
+            <div>
+                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">ابحث عن الصنف</label>
+                <input type="text" id="linkSearch" class="form-input" placeholder="اكتب اسم الصنف أو الباركود..." oninput="searchProducts(this.value)">
+            </div>
+            <div id="linkResults" class="max-h-60 overflow-y-auto space-y-1"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+function csrfH() { return {'X-CSRF-Token': document.getElementById('csrfToken').value, 'Content-Type': 'application/json'}; }
+
+async function deleteReq(id) {
+    if (!confirm('حذف هذا الطلب المكرر؟')) return;
+    const r = await fetch(`/api/periodic-stocktake/request/${id}/reject`, {method:'POST', headers: csrfH()});
+    const d = await r.json();
+    if (d.success) {
+        document.getElementById ? location.reload() : location.reload();
+    }
+}
+
+async function markEditDone(id) {
+    if (!confirm('تأكيد أن التعديل تم؟')) return;
+    const r = await fetch(`/api/periodic-stocktake/edit-request/${id}/done`, {method:'POST', headers: csrfH()});
+    const d = await r.json();
+    alert(d.message);
+    if (d.success) location.reload();
+}
+
+async function rejectEditReq(id) {
+    if (!confirm('رفض هذا الطلب؟')) return;
+    const r = await fetch(`/api/periodic-stocktake/edit-request/${id}/reject`, {method:'POST', headers: csrfH()});
+    const d = await r.json();
+    alert(d.message);
+    if (d.success) location.reload();
+}
+
+// Render edit request data nicely
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.edit-req-data').forEach(el => {
+        try {
+            const scriptEl = el.previousElementSibling;
+            if (!scriptEl || !scriptEl.classList.contains('edit-req-json')) return;
+            const data = JSON.parse(scriptEl.textContent);
+            let html = '<div class="space-y-3">';
+            
+            // البيانات الأساسية
+            html += '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">';
+            const fields = [
+                ['الاسم', data.name], ['الباركود', data.barcode], 
+                ['القسم', data.category_id], ['الوحدة الأساسية', data.unit],
+                ['العائلة', data.brand], ['التكلفة', data.cost_price], ['البيع', data.sell_price]
+            ];
+            fields.forEach(([label, val]) => {
+                if (val) html += `<div><span class="text-gray-400 text-xs">${label}</span><p class="font-bold text-gray-800 dark:text-gray-100">${val}</p></div>`;
+            });
+            html += '</div>';
+            
+            // الوحدات
+            if (data.units && data.units.length > 0) {
+                html += '<div class="border border-blue-200 dark:border-blue-800 rounded-xl overflow-hidden">';
+                html += '<div class="p-2 bg-blue-100 dark:bg-blue-900/30 text-xs font-bold text-blue-700 dark:text-blue-300">📦 الوحدات المقترحة</div>';
+                html += '<table class="w-full text-sm"><thead class="bg-gray-50 dark:bg-gray-800"><tr>';
+                html += '<th class="p-2 text-right text-xs text-gray-500">الوحدة</th>';
+                html += '<th class="p-2 text-right text-xs text-gray-500">التحويل</th>';
+                html += '<th class="p-2 text-right text-xs text-gray-500">الباركود</th>';
+                html += '<th class="p-2 text-right text-xs text-gray-500">التكلفة</th>';
+                html += '<th class="p-2 text-right text-xs text-gray-500">البيع</th>';
+                html += '</tr></thead><tbody>';
+                data.units.forEach(u => {
+                    html += `<tr class="border-t border-gray-100 dark:border-gray-800">`;
+                    html += `<td class="p-2 font-bold">${u.unit||'-'}</td>`;
+                    html += `<td class="p-2 text-emerald-600 font-bold">${u.conversion_factor||1} ${data.unit||'أساسية'}</td>`;
+                    html += `<td class="p-2 font-mono text-gray-500 text-xs">${u.barcode||'-'}</td>`;
+                    html += `<td class="p-2">${u.cost_price||'-'}</td>`;
+                    html += `<td class="p-2">${u.sell_price||'-'}</td>`;
+                    html += `</tr>`;
+                });
+                html += '</tbody></table></div>';
+            }
+            
+            html += '</div>';
+            el.innerHTML = html;
+        } catch(e) {
+            el.innerHTML = '<p class="text-sm text-gray-500">خطأ في عرض البيانات</p>';
+        }
+    });
+});
+
+function showEditModal(id, req) {
+    document.getElementById('editId').value = id;
+    document.getElementById('editBarcode').value = req.barcode || '';
+    document.getElementById('editName').value = req.product_name || '';
+    document.getElementById('editCategory').value = req.category_id || '';
+    document.getElementById('editUnit').value = req.unit || '';
+    document.getElementById('editQty').value = req.quantity_counted || 1;
+    document.getElementById('editPackSize').value = req.pack_size || 1;
+    document.getElementById('editCost').value = req.cost_price || '';
+    document.getElementById('editSell').value = req.sell_price || '';
+    document.getElementById('editProduction').value = req.production_date || '';
+    document.getElementById('editExpiry').value = req.expiry_date || '';
+    document.getElementById('editBatch').value = req.batch_no || '';
+    document.getElementById('editNotes').value = req.notes || '';
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.add('hidden');
+}
+
+let extraUnitCount = 0;
+const unitOptions = `<option value="">-- اختر --</option>{% for u in units %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}`;
+
+function addExtraUnit() {
+    extraUnitCount++;
+    const div = document.createElement('div');
+    div.className = 'flex gap-2 items-end p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50';
+    div.id = 'extraUnit_' + extraUnitCount;
+    div.innerHTML = `
+        <div class="flex-1">
+            <label class="text-xs text-gray-500">الوحدة</label>
+            <select class="form-input text-sm eu-unit">${unitOptions}</select>
+        </div>
+        <div class="w-24">
+            <label class="text-xs text-gray-500">الباركود</label>
+            <input type="text" class="form-input text-sm eu-barcode" placeholder="باركود">
+        </div>
+        <div class="w-20">
+            <label class="text-xs text-gray-500">العبوة</label>
+            <input type="number" class="form-input text-sm eu-pack" min="1" value="1">
+        </div>
+        <div class="w-24">
+            <label class="text-xs text-gray-500">التكلفة</label>
+            <input type="number" class="form-input text-sm eu-cost" min="0" step="0.01">
+        </div>
+        <div class="w-24">
+            <label class="text-xs text-gray-500">البيع</label>
+            <input type="number" class="form-input text-sm eu-sell" min="0" step="0.01">
+        </div>
+        <button onclick="document.getElementById('extraUnit_${extraUnitCount}').remove()" class="p-2 text-red-500 hover:bg-red-100 rounded-lg text-sm">🗑️</button>
+    `;
+    document.getElementById('extraUnitsContainer').appendChild(div);
+}
+
+function getExtraUnits() {
+    const units = [];
+    document.querySelectorAll('#extraUnitsContainer > div').forEach(div => {
+        const unit = div.querySelector('.eu-unit')?.value;
+        const barcode = div.querySelector('.eu-barcode')?.value || '';
+        const pack = div.querySelector('.eu-pack')?.value || 1;
+        const cost = div.querySelector('.eu-cost')?.value || null;
+        const sell = div.querySelector('.eu-sell')?.value || null;
+        if (unit) units.push({ unit, barcode, pack_size: parseInt(pack), cost_price: cost, sell_price: sell });
+    });
+    return units;
+}
+
+async function saveEdit() {
+    const id = document.getElementById('editId').value;
+    const data = {
+        product_name: document.getElementById('editName').value,
+        category_id: document.getElementById('editCategory').value || null,
+        unit: document.getElementById('editUnit').value,
+        quantity_counted: document.getElementById('editQty').value,
+        pack_size: document.getElementById('editPackSize').value,
+        cost_price: document.getElementById('editCost').value || null,
+        sell_price: document.getElementById('editSell').value || null,
+        production_date: document.getElementById('editProduction').value || null,
+        expiry_date: document.getElementById('editExpiry').value || null,
+        batch_no: document.getElementById('editBatch').value || null,
+        notes: document.getElementById('editNotes').value || null,
+        extra_units: getExtraUnits()
+    };
+    const r = await fetch(`/api/periodic-stocktake/request/${id}/edit`, {method:'POST', headers: csrfH(), body: JSON.stringify(data)});
+    const d = await r.json();
+    alert(d.message);
+    if (d.success) { closeEditModal(); location.reload(); }
+}
+
+async function approveRequest(id) {
+    if (!confirm('اعتماد هذا الطلب وإضافته كصنف جديد؟')) return;
+    const r = await fetch(`/api/periodic-stocktake/request/${id}/approve`, {method:'POST', headers: csrfH()});
+    const d = await r.json();
+    alert(d.message);
+    if (d.success) location.reload();
+}
+
+async function rejectRequest(id) {
+    if (!confirm('رفض هذا الطلب؟')) return;
+    const r = await fetch(`/api/periodic-stocktake/request/${id}/reject`, {method:'POST', headers: csrfH()});
+    const d = await r.json();
+    alert(d.message);
+    if (d.success) location.reload();
+}
+
+function showLinkModal(id, barcode) {
+    document.getElementById('linkRequestId').value = id;
+    document.getElementById('linkBarcode').textContent = barcode;
+    document.getElementById('linkSearch').value = '';
+    document.getElementById('linkResults').innerHTML = '';
+    document.getElementById('linkModal').classList.remove('hidden');
+}
+
+function closeLinkModal() {
+    document.getElementById('linkModal').classList.add('hidden');
+}
+
+async function searchProducts(q) {
+    if (q.length < 2) { document.getElementById('linkResults').innerHTML = ''; return; }
+    const r = await fetch(`/api/products/search?q=${encodeURIComponent(q)}`);
+    const d = await r.json();
+    const box = document.getElementById('linkResults');
+    if (!d.products || !d.products.length) {
+        box.innerHTML = '<p class="text-center text-gray-400 text-sm py-4">لا توجد نتائج</p>';
+        return;
+    }
+    box.innerHTML = d.products.map(p => `
+        <button onclick="linkToProduct(${p.id}, '${(p.name||'').replace(/'/g,"\\'")}')" 
+            class="w-full text-right p-3 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-100 dark:border-gray-800 transition-colors">
+            <div class="font-bold text-gray-800 dark:text-gray-100 text-sm">${p.name}</div>
+            <div class="text-xs text-gray-500">${p.barcode || '-'} — ${p.unit || '-'}</div>
+        </button>
+    `).join('');
+}
+
+async function linkToProduct(productId, productName) {
+    const reqId = document.getElementById('linkRequestId').value;
+    if (!confirm('ربط الباركود بالصنف: ' + productName + '؟')) return;
+    const r = await fetch(`/api/periodic-stocktake/request/${reqId}/link`, {
+        method: 'POST', headers: csrfH(),
+        body: JSON.stringify({product_id: productId})
+    });
+    const d = await r.json();
+    alert(d.message);
+    if (d.success) { closeLinkModal(); location.reload(); }
+}
+</script>
+{% endblock %}

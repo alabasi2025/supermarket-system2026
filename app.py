@@ -31,7 +31,7 @@ from werkzeug.utils import secure_filename
 # ═══════════════════════════════════════════════════════════════
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(32)
+app.secret_key = os.environ.get('SECRET_KEY') or 'supermarket-alabbasi-secret-key-2026'
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # No cache during development
 
 # PostgreSQL Configuration
@@ -1769,7 +1769,7 @@ def pos():
                COALESCE(
                    (SELECT pp.price FROM product_prices pp 
                     JOIN price_lists pl ON pl.id = pp.price_list_id 
-                    WHERE pp.product_id = p.id AND pl.is_default = 1),
+                    WHERE pp.product_id = p.id AND pl.is_default = TRUE),
                    0
                ) as price
         FROM products p
@@ -3678,6 +3678,1149 @@ def api_product_barcodes(product_id):
     return jsonify([dict(b) for b in barcodes])
 
 # ═══════════════════════════════════════════════════════════════
+# وحدات العرض (Display Units & Shelves)
+# ═══════════════════════════════════════════════════════════════
+
+DISPLAY_UNIT_TYPE_LABELS = {
+    'stand': 'ستاند',
+    'glass_stand': 'ستاند زجاجي',
+    'fridge': 'ثلاجة',
+    'freezer': 'فريزر',
+    'other': 'أخرى'
+}
+
+@app.route('/display-units')
+@login_required
+def display_units_page():
+    db = get_db()
+    units_raw = db.execute('SELECT * FROM display_units ORDER BY is_active DESC, id ASC').fetchall()
+    display_units = []
+    total_shelves = 0
+    active_count = 0
+    type_counts = {}
+    for u in units_raw:
+        ud = dict(u)
+        shelves = db.execute('SELECT * FROM shelves WHERE display_unit_id = %s ORDER BY shelf_number', (u['id'],)).fetchall()
+        ud['shelves'] = [dict(s) for s in shelves]
+        display_units.append(ud)
+        total_shelves += len(shelves)
+        if u['is_active']:
+            active_count += 1
+        label = DISPLAY_UNIT_TYPE_LABELS.get(u['type'], u['type'])
+        type_counts[label] = type_counts.get(label, 0) + 1
+
+    stats = {
+        'total': len(units_raw),
+        'total_shelves': total_shelves,
+        'active': active_count,
+        'types': type_counts
+    }
+    display_units_json = json.dumps([{
+        'id': u['id'], 'name': u['name'], 'type': u['type'],
+        'shelves_count': u['shelves_count'], 'notes': u.get('notes') or '',
+        'is_active': u['is_active'], 'shelves': [{
+            'id': s['id'], 'display_unit_id': s['display_unit_id'],
+            'shelf_number': s['shelf_number'], 'name': s['name'],
+            'notes': s.get('notes') or '', 'is_active': s['is_active']
+        } for s in u['shelves']]
+    } for u in display_units], ensure_ascii=False)
+    return render_template('display_units.html', display_units=display_units, stats=stats, type_labels=DISPLAY_UNIT_TYPE_LABELS, display_units_json=display_units_json)
+
+
+@app.route('/api/display-units', methods=['GET'])
+@login_required
+def api_get_display_units():
+    db = get_db()
+    units_raw = db.execute('SELECT * FROM display_units WHERE is_active = TRUE ORDER BY id ASC').fetchall()
+    result = []
+    for u in units_raw:
+        ud = dict(u)
+        shelves = db.execute('SELECT * FROM shelves WHERE display_unit_id = %s AND is_active = TRUE ORDER BY shelf_number', (u['id'],)).fetchall()
+        ud['shelves'] = [dict(s) for s in shelves]
+        # Convert datetime objects to strings for JSON
+        for key in ['created_at', 'updated_at']:
+            if ud.get(key):
+                ud[key] = str(ud[key])
+        for sh in ud['shelves']:
+            if sh.get('created_at'):
+                sh['created_at'] = str(sh['created_at'])
+        result.append(ud)
+    return jsonify({'success': True, 'display_units': result})
+
+
+@app.route('/api/display-units', methods=['POST'])
+@login_required
+def api_create_display_unit():
+    if session['user_id'] != 1:
+        return jsonify({'success': False, 'message': 'فقط مدير النظام يستطيع إنشاء وحدات العرض'}), 403
+    db = get_db()
+    try:
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        unit_type = (data.get('type') or '').strip()
+        shelves_count = int(data.get('shelves_count') or 1)
+        notes = (data.get('notes') or '').strip() or None
+
+        if not name:
+            return jsonify({'success': False, 'message': 'اسم الوحدة مطلوب'}), 400
+        if unit_type not in ('stand', 'glass_stand', 'fridge', 'freezer', 'other'):
+            return jsonify({'success': False, 'message': 'نوع الوحدة غير صالح'}), 400
+        if shelves_count < 1:
+            return jsonify({'success': False, 'message': 'عدد الرفوف يجب أن يكون 1 على الأقل'}), 400
+
+        row = db.execute('''
+            INSERT INTO display_units (name, type, shelves_count, notes)
+            VALUES (%s, %s, %s, %s) RETURNING *
+        ''', (name, unit_type, shelves_count, notes)).fetchone()
+
+        for i in range(1, shelves_count + 1):
+            db.execute('''
+                INSERT INTO shelves (display_unit_id, shelf_number, name)
+                VALUES (%s, %s, %s)
+            ''', (row['id'], i, f'الرف {i}'))
+
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم إنشاء وحدة العرض بنجاح', 'unit_id': row['id']})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل الإنشاء: {str(e)}'}), 500
+
+
+@app.route('/api/display-units/<int:unit_id>', methods=['PUT'])
+@login_required
+def api_update_display_unit(unit_id):
+    if session['user_id'] != 1:
+        return jsonify({'success': False, 'message': 'فقط مدير النظام يستطيع تعديل وحدات العرض'}), 403
+    db = get_db()
+    try:
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        unit_type = (data.get('type') or '').strip()
+        new_shelves_count = int(data.get('shelves_count') or 1)
+        notes = (data.get('notes') or '').strip() or None
+
+        if not name:
+            return jsonify({'success': False, 'message': 'اسم الوحدة مطلوب'}), 400
+        if unit_type not in ('stand', 'glass_stand', 'fridge', 'freezer', 'other'):
+            return jsonify({'success': False, 'message': 'نوع الوحدة غير صالح'}), 400
+
+        existing = db.execute('SELECT * FROM display_units WHERE id = %s', (unit_id,)).fetchone()
+        if not existing:
+            return jsonify({'success': False, 'message': 'وحدة العرض غير موجودة'}), 404
+
+        db.execute('''
+            UPDATE display_units SET name = %s, type = %s, shelves_count = %s, notes = %s, updated_at = NOW()
+            WHERE id = %s
+        ''', (name, unit_type, new_shelves_count, notes, unit_id))
+
+        old_count = existing['shelves_count']
+        if new_shelves_count > old_count:
+            for i in range(old_count + 1, new_shelves_count + 1):
+                db.execute('''
+                    INSERT INTO shelves (display_unit_id, shelf_number, name)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (display_unit_id, shelf_number) DO NOTHING
+                ''', (unit_id, i, f'الرف {i}'))
+        elif new_shelves_count < old_count:
+            db.execute('''
+                DELETE FROM shelves WHERE display_unit_id = %s AND shelf_number > %s
+            ''', (unit_id, new_shelves_count))
+
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم تحديث وحدة العرض بنجاح'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل التحديث: {str(e)}'}), 500
+
+
+@app.route('/api/display-units/<int:unit_id>', methods=['DELETE'])
+@login_required
+def api_delete_display_unit(unit_id):
+    if session['user_id'] != 1:
+        return jsonify({'success': False, 'message': 'فقط مدير النظام يستطيع تعطيل وحدات العرض'}), 403
+    db = get_db()
+    try:
+        existing = db.execute('SELECT * FROM display_units WHERE id = %s', (unit_id,)).fetchone()
+        if not existing:
+            return jsonify({'success': False, 'message': 'وحدة العرض غير موجودة'}), 404
+        db.execute('UPDATE display_units SET is_active = FALSE, updated_at = NOW() WHERE id = %s', (unit_id,))
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم تعطيل وحدة العرض'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل التعطيل: {str(e)}'}), 500
+
+
+@app.route('/api/shelves/<int:shelf_id>', methods=['PUT'])
+@login_required
+def api_update_shelf(shelf_id):
+    db = get_db()
+    try:
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        notes = (data.get('notes') or '').strip() or None
+
+        if not name:
+            return jsonify({'success': False, 'message': 'اسم الرف مطلوب'}), 400
+
+        existing = db.execute('SELECT * FROM shelves WHERE id = %s', (shelf_id,)).fetchone()
+        if not existing:
+            return jsonify({'success': False, 'message': 'الرف غير موجود'}), 404
+
+        db.execute('UPDATE shelves SET name = %s, notes = %s WHERE id = %s', (name, notes, shelf_id))
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم تحديث الرف'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل التحديث: {str(e)}'}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# الجرد الدوري (Periodic Stocktake) — نسخة من الجرد الأولي
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/periodic-stocktake')
+@login_required
+def periodic_stocktake_page():
+    db = get_db()
+    categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
+    units = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
+
+    open_session = db.execute('''
+        SELECT s.*, u.display_name as creator_name FROM periodic_stocktake_sessions s
+        LEFT JOIN users u ON u.id = s.created_by
+        WHERE s.status = 'open'
+        ORDER BY s.id DESC LIMIT 1
+    ''').fetchone()
+
+    recent_items = []
+    recent_requests = []
+    if open_session:
+        recent_items = db.execute('''
+            SELECT psi.*, du.name as display_unit_name, sh.name as shelf_name
+            FROM periodic_stocktake_items psi
+            LEFT JOIN display_units du ON du.id = psi.display_unit_id
+            LEFT JOIN shelves sh ON sh.id = psi.shelf_id
+            WHERE psi.session_id = %s
+            ORDER BY psi.id DESC LIMIT 20
+        ''', (open_session['id'],)).fetchall()
+        recent_requests = db.execute('''
+            SELECT r.*, c.name as category_name
+            FROM periodic_stocktake_product_requests r
+            LEFT JOIN categories c ON c.id = r.category_id
+            WHERE r.session_id = %s
+            ORDER BY r.id DESC LIMIT 20
+        ''', (open_session['id'],)).fetchall()
+
+    display_units = db.execute('SELECT * FROM display_units WHERE is_active = TRUE ORDER BY id').fetchall()
+    return render_template('periodic_stocktake.html', categories=categories, units=units, open_session=open_session, recent_items=recent_items, recent_requests=recent_requests, display_units=display_units)
+
+@app.route('/api/periodic-stocktake/recent')
+@login_required
+def api_periodic_stocktake_recent():
+    db = get_db()
+    session_id = request.args.get('session_id', type=int)
+    if not session_id:
+        return jsonify({'items': []})
+    items = db.execute('''
+        SELECT psi.id, psi.product_name, psi.barcode, psi.selected_unit, psi.counted_stock,
+               psi.production_date, psi.expiry_date, psi.batch_no, psi.notes,
+               du.name as display_unit_name, sh.name as shelf_name
+        FROM periodic_stocktake_items psi
+        LEFT JOIN display_units du ON du.id = psi.display_unit_id
+        LEFT JOIN shelves sh ON sh.id = psi.shelf_id
+        WHERE psi.session_id = %s
+        ORDER BY psi.id DESC LIMIT 20
+    ''', (session_id,)).fetchall()
+    result = []
+    for i in items:
+        d = dict(i)
+        for k in ['production_date', 'expiry_date']:
+            if d.get(k) and hasattr(d[k], 'strftime'):
+                d[k] = d[k].strftime('%Y-%m-%d')
+        result.append(d)
+    return jsonify({'items': result})
+
+@app.route('/api/periodic-stocktake/recent-requests')
+@login_required
+def api_periodic_stocktake_recent_requests():
+    db = get_db()
+    session_id = request.args.get('session_id', type=int)
+    if not session_id:
+        return jsonify({'requests': []})
+    reqs = db.execute('''
+        SELECT product_name, barcode, quantity_counted
+        FROM periodic_stocktake_product_requests WHERE session_id = %s
+        ORDER BY id DESC LIMIT 20
+    ''', (session_id,)).fetchall()
+    return jsonify({'requests': [dict(r) for r in reqs]})
+
+@app.route('/api/periodic-stocktake/session', methods=['POST'])
+@login_required
+def api_create_periodic_stocktake_session():
+    db = get_db()
+    
+    if session['user_id'] != 1:
+        return jsonify({'success': False, 'message': 'فقط مدير النظام يستطيع فتح جلسة جرد'}), 403
+    
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip() or f"جرد دوري {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    notes = (data.get('notes') or '').strip()
+
+    existing = db.execute('''
+        SELECT * FROM periodic_stocktake_sessions
+        WHERE status = 'open'
+        ORDER BY id DESC LIMIT 1
+    ''').fetchone()
+    if existing:
+        return jsonify({'success': True, 'session_id': existing['id'], 'session': dict(existing), 'message': 'توجد جلسة جرد مفتوحة بالفعل'})
+
+    row = db.execute('''
+        INSERT INTO periodic_stocktake_sessions (title, notes, status, created_by)
+        VALUES (%s, %s, 'open', %s)
+        RETURNING *
+    ''', (title, notes, session['user_id'])).fetchone()
+    db.commit()
+    return jsonify({'success': True, 'session_id': row['id'], 'session': dict(row)})
+
+@app.route('/api/periodic-stocktake/session/current')
+@login_required
+def api_current_periodic_stocktake_session():
+    db = get_db()
+    open_session = db.execute('''
+        SELECT * FROM periodic_stocktake_sessions
+        WHERE status = 'open'
+        ORDER BY id DESC LIMIT 1
+    ''').fetchone()
+    return jsonify({'success': True, 'session': dict(open_session) if open_session else None})
+
+@app.route('/api/periodic-stocktake/session/close', methods=['POST'])
+@login_required
+def api_close_periodic_stocktake_session():
+    db = get_db()
+    
+    if session['user_id'] != 1:
+        return jsonify({'success': False, 'message': 'فقط مدير النظام يستطيع إغلاق جلسة الجرد'}), 403
+    
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+    
+    if not session_id:
+        return jsonify({'success': False, 'message': 'رقم الجلسة مطلوب'}), 400
+    
+    stocktake_session = db.execute('SELECT * FROM periodic_stocktake_sessions WHERE id = %s', (session_id,)).fetchone()
+    if not stocktake_session:
+        return jsonify({'success': False, 'message': 'جلسة الجرد غير موجودة'}), 404
+    
+    if stocktake_session['status'] == 'closed':
+        return jsonify({'success': False, 'message': 'الجلسة مغلقة بالفعل'}), 400
+    
+    db.execute('UPDATE periodic_stocktake_sessions SET status = %s, closed_at = NOW() WHERE id = %s', ('closed', session_id))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم إغلاق جلسة الجرد'})
+
+@app.route('/periodic-stocktake/review')
+@login_required
+def periodic_stocktake_review_page():
+    db = get_db()
+    
+    sessions = db.execute('''
+        SELECT s.*, u.username as created_by_name,
+               (SELECT COUNT(*) FROM periodic_stocktake_items WHERE session_id = s.id) as items_count,
+               (SELECT COUNT(*) FROM periodic_stocktake_product_requests WHERE session_id = s.id) as requests_count
+        FROM periodic_stocktake_sessions s
+        LEFT JOIN users u ON u.id = s.created_by
+        ORDER BY s.id DESC
+        LIMIT 50
+    ''').fetchall()
+    
+    return render_template('periodic_stocktake_review.html', sessions=sessions)
+
+@app.route('/periodic-stocktake/requests')
+@login_required
+def periodic_stocktake_requests_page():
+    db = get_db()
+    status_filter = request.args.get('status', 'all')
+    
+    if status_filter == 'all':
+        requests_list = db.execute('''
+            SELECT r.*, c.name as category_name, 
+                   u.display_name as requested_by_name,
+                   u2.display_name as reviewed_by_name,
+                   s.title as session_title
+            FROM periodic_stocktake_product_requests r
+            LEFT JOIN categories c ON c.id = r.category_id
+            LEFT JOIN users u ON u.id = r.requested_by
+            LEFT JOIN users u2 ON u2.id = r.reviewed_by
+            LEFT JOIN periodic_stocktake_sessions s ON s.id = r.session_id
+            ORDER BY r.id DESC
+        ''').fetchall()
+    else:
+        requests_list = db.execute('''
+            SELECT r.*, c.name as category_name,
+                   u.display_name as requested_by_name,
+                   u2.display_name as reviewed_by_name,
+                   s.title as session_title
+            FROM periodic_stocktake_product_requests r
+            LEFT JOIN categories c ON c.id = r.category_id
+            LEFT JOIN users u ON u.id = r.requested_by
+            LEFT JOIN users u2 ON u2.id = r.reviewed_by
+            LEFT JOIN periodic_stocktake_sessions s ON s.id = r.session_id
+            WHERE r.status = %s
+            ORDER BY r.id DESC
+        ''', (status_filter,)).fetchall()
+    
+    categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
+    counts = {
+        'all': db.execute('SELECT COUNT(*) as c FROM periodic_stocktake_product_requests').fetchone()['c'],
+        'pending': db.execute("SELECT COUNT(*) as c FROM periodic_stocktake_product_requests WHERE status='pending'").fetchone()['c'],
+        'approved': db.execute("SELECT COUNT(*) as c FROM periodic_stocktake_product_requests WHERE status='approved'").fetchone()['c'],
+        'rejected': db.execute("SELECT COUNT(*) as c FROM periodic_stocktake_product_requests WHERE status='rejected'").fetchone()['c'],
+    }
+    units = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
+    
+    all_pending = db.execute('''
+        SELECT id, barcode FROM periodic_stocktake_product_requests
+        WHERE barcode IS NOT NULL AND barcode != '' AND status = 'pending'
+        ORDER BY id
+    ''').fetchall()
+    
+    from collections import defaultdict
+    barcode_ids_map = defaultdict(list)
+    for r in all_pending:
+        barcode_ids_map[r['barcode']].append(r['id'])
+    
+    duplicate_barcodes = {bc: ids for bc, ids in barcode_ids_map.items() if len(ids) > 1}
+    
+    requests_with_dup = []
+    for r in requests_list:
+        rd = dict(r)
+        bc = rd.get('barcode')
+        if bc and bc in duplicate_barcodes:
+            rd['is_duplicate'] = True
+            other_ids = [i for i in duplicate_barcodes[bc] if i != rd['id']]
+            rd['duplicate_with'] = other_ids
+        else:
+            rd['is_duplicate'] = False
+            rd['duplicate_with'] = []
+        requests_with_dup.append(rd)
+    requests_list = requests_with_dup
+    
+    counts['duplicates'] = len(duplicate_barcodes)
+    
+    edit_requests_raw = db.execute('''
+        SELECT r.*, u.display_name as requested_by_name, u2.display_name as reviewed_by_name, p.name as current_name
+        FROM periodic_stocktake_edit_requests r
+        LEFT JOIN users u ON u.id = r.requested_by
+        LEFT JOIN users u2 ON u2.id = r.reviewed_by
+        LEFT JOIN products p ON p.id = r.product_id
+        ORDER BY r.id DESC
+    ''').fetchall()
+    
+    import json as json_mod
+    edit_requests = []
+    for er in edit_requests_raw:
+        er_dict = dict(er)
+        details = er_dict.get('details') or ''
+        er_dict['note'] = ''
+        er_dict['proposed'] = None
+        if '=== البيانات المقترحة ===' in details:
+            parts = details.split('=== البيانات المقترحة ===')
+            er_dict['note'] = parts[0].strip()
+            try:
+                er_dict['proposed'] = json_mod.loads(parts[1])
+            except:
+                er_dict['proposed'] = None
+        edit_requests.append(er_dict)
+    
+    return render_template('periodic_stocktake_requests.html', requests=requests_list, categories=categories, units=units, status_filter=status_filter, counts=counts, edit_requests=edit_requests)
+
+@app.route('/api/periodic-stocktake/request/<int:request_id>/approve', methods=['POST'])
+@login_required
+def api_periodic_approve_request(request_id):
+    db = get_db()
+    req = db.execute('SELECT * FROM periodic_stocktake_product_requests WHERE id = %s', (request_id,)).fetchone()
+    if not req:
+        return jsonify({'success': False, 'message': 'الطلب غير موجود'}), 404
+    
+    if req['status'] != 'pending':
+        return jsonify({'success': False, 'message': 'الطلب تم معالجته مسبقًا'}), 400
+    
+    product_code = f"NEW-P{request_id}"
+    new_product = db.execute('''
+        INSERT INTO products (product_code, name, barcode, category_id, unit, cost_price, sell_price, current_stock, is_active)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+        RETURNING id
+    ''', (
+        product_code,
+        req['product_name'] or f'صنف جديد {req["barcode"]}',
+        req['barcode'],
+        req['category_id'],
+        req['unit'] or 'حبه',
+        req['cost_price'] or 0,
+        req['sell_price'] or 0,
+        req['quantity_counted'] or 0
+    )).fetchone()
+    
+    data = request.get_json() or {}
+    extra_units = data.get('extra_units', [])
+    for eu in extra_units:
+        if eu.get('unit'):
+            db.execute('''
+                INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, cost_price, sell_price)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (
+                new_product['id'], eu.get('barcode') or '', eu['unit'],
+                int(eu.get('pack_size') or 1),
+                Decimal(str(eu['cost_price'])) if eu.get('cost_price') else None,
+                Decimal(str(eu['sell_price'])) if eu.get('sell_price') else None
+            ))
+    
+    db.execute('''
+        UPDATE periodic_stocktake_product_requests 
+        SET status = 'approved', reviewed_by = %s, reviewed_at = NOW()
+        WHERE id = %s
+    ''', (session['user_id'], request_id))
+    db.commit()
+    
+    return jsonify({'success': True, 'message': f'تم اعتماد الصنف وإضافته برقم {new_product["id"]}', 'product_id': new_product['id']})
+
+@app.route('/api/periodic-stocktake/request/<int:request_id>/reject', methods=['POST'])
+@login_required
+def api_periodic_reject_request(request_id):
+    db = get_db()
+    req = db.execute('SELECT * FROM periodic_stocktake_product_requests WHERE id = %s', (request_id,)).fetchone()
+    if not req:
+        return jsonify({'success': False, 'message': 'الطلب غير موجود'}), 404
+    
+    db.execute('''
+        UPDATE periodic_stocktake_product_requests 
+        SET status = 'rejected', reviewed_by = %s, reviewed_at = NOW()
+        WHERE id = %s
+    ''', (session['user_id'], request_id))
+    db.commit()
+    
+    return jsonify({'success': True, 'message': 'تم رفض الطلب'})
+
+@app.route('/api/periodic-stocktake/request/<int:request_id>/edit', methods=['POST'])
+@login_required
+def api_periodic_edit_request(request_id):
+    db = get_db()
+    req = db.execute('SELECT * FROM periodic_stocktake_product_requests WHERE id = %s', (request_id,)).fetchone()
+    if not req:
+        return jsonify({'success': False, 'message': 'الطلب غير موجود'}), 404
+    
+    if req['status'] != 'pending':
+        return jsonify({'success': False, 'message': 'لا يمكن تعديل طلب تم معالجته'}), 400
+    
+    data = request.get_json() or {}
+    
+    db.execute('''
+        UPDATE periodic_stocktake_product_requests SET
+            product_name = %s, category_id = %s, unit = %s,
+            quantity_counted = %s, pack_size = %s,
+            cost_price = %s, sell_price = %s,
+            production_date = %s, expiry_date = %s,
+            batch_no = %s, notes = %s
+        WHERE id = %s
+    ''', (
+        data.get('product_name') or req['product_name'],
+        data.get('category_id') or req['category_id'],
+        data.get('unit') or req['unit'],
+        Decimal(str(data.get('quantity_counted') or req['quantity_counted'] or 1)),
+        int(data.get('pack_size') or req['pack_size'] or 1),
+        Decimal(str(data['cost_price'])) if data.get('cost_price') else req['cost_price'],
+        Decimal(str(data['sell_price'])) if data.get('sell_price') else req['sell_price'],
+        data.get('production_date') or req['production_date'],
+        data.get('expiry_date') or req['expiry_date'],
+        data.get('batch_no') or req['batch_no'],
+        data.get('notes') or req['notes'],
+        request_id
+    ))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم تعديل الطلب'})
+
+@app.route('/api/periodic-stocktake/request/<int:request_id>/link', methods=['POST'])
+@login_required
+def api_periodic_link_request(request_id):
+    db = get_db()
+    data = request.get_json() or {}
+    product_id = data.get('product_id')
+    
+    if not product_id:
+        return jsonify({'success': False, 'message': 'اختر الصنف المراد الربط به'}), 400
+    
+    req = db.execute('SELECT * FROM periodic_stocktake_product_requests WHERE id = %s', (request_id,)).fetchone()
+    if not req:
+        return jsonify({'success': False, 'message': 'الطلب غير موجود'}), 404
+    
+    product = db.execute('SELECT * FROM products WHERE id = %s', (product_id,)).fetchone()
+    if not product:
+        return jsonify({'success': False, 'message': 'الصنف غير موجود'}), 404
+    
+    db.execute('''
+        INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, cost_price, sell_price)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    ''', (product_id, req['barcode'], req['unit'] or 'حبه', req['pack_size'] or 1, req['cost_price'], req['sell_price']))
+    
+    db.execute('''
+        UPDATE periodic_stocktake_product_requests 
+        SET status = 'approved', reviewed_by = %s, reviewed_at = NOW()
+        WHERE id = %s
+    ''', (session['user_id'], request_id))
+    db.commit()
+    
+    return jsonify({'success': True, 'message': f'تم ربط الباركود بالصنف: {product["name"]}'})
+
+@app.route('/periodic-stocktake/review/<int:session_id>')
+@login_required
+def periodic_stocktake_session_detail(session_id):
+    db = get_db()
+    
+    stocktake_session = db.execute('SELECT s.*, u.username as created_by_name FROM periodic_stocktake_sessions s LEFT JOIN users u ON u.id = s.created_by WHERE s.id = %s', (session_id,)).fetchone()
+    if not stocktake_session:
+        return "جلسة الجرد غير موجودة", 404
+    
+    items = db.execute('''
+        SELECT si.*, p.name as product_name_db, c.name as category_name,
+               du.name as display_unit_name, sh.name as shelf_name
+        FROM periodic_stocktake_items si
+        LEFT JOIN products p ON p.id = si.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        LEFT JOIN display_units du ON du.id = si.display_unit_id
+        LEFT JOIN shelves sh ON sh.id = si.shelf_id
+        ORDER BY si.id DESC
+    ''').fetchall()
+    items = [i for i in items if i['session_id'] == session_id]
+    
+    requests_raw = db.execute('''
+        SELECT r.*, c.name as category_name
+        FROM periodic_stocktake_product_requests r
+        LEFT JOIN categories c ON c.id = r.category_id
+        WHERE r.session_id = %s
+        ORDER BY r.id DESC
+    ''', (session_id,)).fetchall()
+    
+    from collections import Counter
+    barcode_counts = Counter(r['barcode'] for r in requests_raw if r['barcode'])
+    dup_barcodes = {bc for bc, cnt in barcode_counts.items() if cnt > 1}
+    
+    requests = []
+    for r in requests_raw:
+        rd = dict(r)
+        rd['is_duplicate'] = rd.get('barcode') in dup_barcodes
+        requests.append(rd)
+    
+    return render_template('periodic_stocktake_session_detail.html', stocktake_session=stocktake_session, items=items, requests=requests)
+
+@app.route('/periodic-stocktake/export/<int:session_id>')
+@login_required
+def periodic_stocktake_export_excel(session_id):
+    db = get_db()
+    
+    stocktake_session = db.execute('SELECT * FROM periodic_stocktake_sessions WHERE id = %s', (session_id,)).fetchone()
+    if not stocktake_session:
+        return "جلسة الجرد غير موجودة", 404
+    
+    items = db.execute('''
+        SELECT si.*, p.name as product_name_db, c.name as category_name,
+               du.name as display_unit_name, sh.name as shelf_name
+        FROM periodic_stocktake_items si
+        LEFT JOIN products p ON p.id = si.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        LEFT JOIN display_units du ON du.id = si.display_unit_id
+        LEFT JOIN shelves sh ON sh.id = si.shelf_id
+        WHERE si.session_id = %s
+        ORDER BY si.id
+    ''', (session_id,)).fetchall()
+    
+    requests_list = db.execute('''
+        SELECT r.*, c.name as category_name
+        FROM periodic_stocktake_product_requests r
+        LEFT JOIN categories c ON c.id = r.category_id
+        WHERE r.session_id = %s
+        ORDER BY r.id
+    ''', (session_id,)).fetchall()
+    
+    wb = openpyxl.Workbook()
+    
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    header_fill = PatternFill(start_color='6366F1', end_color='6366F1', fill_type='solid')
+    header_align = Alignment(horizontal='center', vertical='center')
+    cell_align = Alignment(horizontal='right', vertical='center')
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    ws_items = wb.active
+    ws_items.title = 'الأصناف المسجلة'
+    ws_items.sheet_view.rightToLeft = True
+    
+    items_headers = ['#', '\u0627\u0633\u0645 \u0627\u0644\u0635\u0646\u0641', '\u0627\u0644\u0628\u0627\u0631\u0643\u0648\u062f', '\u0627\u0644\u0642\u0633\u0645', '\u0648\u062d\u062f\u0629 \u0627\u0644\u0639\u0631\u0636', '\u0627\u0644\u0631\u0641', '\u0627\u0644\u0648\u062d\u062f\u0629', '\u0627\u0644\u0639\u0628\u0648\u0629', '\u0627\u0644\u0643\u0645\u064a\u0629', '\u0627\u0644\u0628\u0627\u062a\u0634', '\u062a\u0627\u0631\u064a\u062e \u0627\u0644\u0625\u0646\u062a\u0627\u062c', '\u062a\u0627\u0631\u064a\u062e \u0627\u0644\u0627\u0646\u062a\u0647\u0627\u0621', '\u0627\u0644\u0645\u062f\u0629 \u0627\u0644\u0645\u062a\u0628\u0642\u064a\u0629 (\u064a\u0648\u0645)', '\u0645\u0644\u0627\u062d\u0638\u0629']
+    for col, header in enumerate(items_headers, 1):
+        cell = ws_items.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+        cell.border = thin_border
+    
+    today_date = datetime.now().date()
+    for row_idx, item in enumerate(items, 2):
+        days_left = None
+        if item['expiry_date']:
+            days_left = (item['expiry_date'] - today_date).days
+        row_data = [
+            row_idx - 1,
+            item['product_name'] or item['product_name_db'] or '',
+            item['barcode'] or '',
+            item['category_name'] or '',
+            item['display_unit_name'] or '',
+            item['shelf_name'] or '',
+            item['selected_unit'] or item['unit'] or '',
+            item['pack_size'] or 1,
+            float(item['counted_stock'] or 0),
+            item['batch_no'] or '',
+            item['production_date'].strftime('%Y-%m-%d') if item['production_date'] else '',
+            item['expiry_date'].strftime('%Y-%m-%d') if item['expiry_date'] else '',
+            days_left if days_left is not None else '',
+            item['notes'] or ''
+        ]
+        for col, value in enumerate(row_data, 1):
+            cell = ws_items.cell(row=row_idx, column=col, value=value)
+            cell.alignment = cell_align
+            cell.border = thin_border
+    
+    
+    ws_items.column_dimensions['A'].width = 5
+    ws_items.column_dimensions['B'].width = 40
+    ws_items.column_dimensions['C'].width = 18
+    ws_items.column_dimensions['D'].width = 20
+    ws_items.column_dimensions['E'].width = 14
+    ws_items.column_dimensions['F'].width = 12
+    ws_items.column_dimensions['G'].width = 12
+    ws_items.column_dimensions['H'].width = 10
+    ws_items.column_dimensions['I'].width = 10
+    ws_items.column_dimensions['J'].width = 15
+    ws_items.column_dimensions['K'].width = 14
+    ws_items.column_dimensions['L'].width = 14
+    ws_items.column_dimensions['M'].width = 16
+    ws_items.column_dimensions['N'].width = 30
+    
+    for row_idx, item in enumerate(items, 2):
+        cell = ws_items.cell(row=row_idx, column=13)
+        if isinstance(cell.value, int):
+            if cell.value < 0:
+                cell.fill = PatternFill(start_color='FEE2E2', end_color='FEE2E2', fill_type='solid')
+            elif cell.value <= 30:
+                cell.fill = PatternFill(start_color='FECACA', end_color='FECACA', fill_type='solid')
+            elif cell.value <= 90:
+                cell.fill = PatternFill(start_color='FEF3C7', end_color='FEF3C7', fill_type='solid')
+    
+    if requests_list:
+        ws_requests = wb.create_sheet('طلبات غير موجود')
+        ws_requests.sheet_view.rightToLeft = True
+        
+        req_headers = ['#', 'الباركود', 'اسم الصنف', 'القسم', 'الوحدة', 'العبوة', 'الكمية', 'تاريخ الإنتاج', 'تاريخ الانتهاء', 'المدة المتبقية (يوم)', 'الباتش', 'سعر التكلفة', 'سعر البيع', 'الحالة', 'ملاحظة']
+        for col, header in enumerate(req_headers, 1):
+            cell = ws_requests.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = PatternFill(start_color='F59E0B', end_color='F59E0B', fill_type='solid')
+            cell.alignment = header_align
+            cell.border = thin_border
+        
+        today = datetime.now().date()
+        for row_idx, req in enumerate(requests_list, 2):
+            days_left = None
+            if req['expiry_date']:
+                days_left = (req['expiry_date'] - today).days
+            
+            status_labels = {'pending': 'قيد المراجعة', 'approved': 'معتمد', 'rejected': 'مرفوض'}
+            row_data = [
+                row_idx - 1,
+                req['barcode'] or '',
+                req['product_name'] or '',
+                req['category_name'] or '',
+                req['unit'] or '',
+                req['pack_size'] or 1,
+                float(req['quantity_counted'] or 1),
+                req['production_date'].strftime('%Y-%m-%d') if req['production_date'] else '',
+                req['expiry_date'].strftime('%Y-%m-%d') if req['expiry_date'] else '',
+                days_left if days_left is not None else '',
+                req['batch_no'] or '',
+                float(req['cost_price']) if req['cost_price'] else '',
+                float(req['sell_price']) if req['sell_price'] else '',
+                status_labels.get(req['status'] or 'pending', req['status'] or ''),
+                req['notes'] or ''
+            ]
+            for col, value in enumerate(row_data, 1):
+                cell = ws_requests.cell(row=row_idx, column=col, value=value)
+                cell.alignment = cell_align
+                cell.border = thin_border
+                if col == 10 and isinstance(value, int):
+                    if value < 0:
+                        cell.fill = PatternFill(start_color='FEE2E2', end_color='FEE2E2', fill_type='solid')
+                    elif value <= 30:
+                        cell.fill = PatternFill(start_color='FECACA', end_color='FECACA', fill_type='solid')
+                    elif value <= 90:
+                        cell.fill = PatternFill(start_color='FEF3C7', end_color='FEF3C7', fill_type='solid')
+        
+        col_widths = {'A':5,'B':18,'C':40,'D':20,'E':12,'F':8,'G':10,'H':14,'I':14,'J':16,'K':15,'L':12,'M':12,'N':14,'O':30}
+        for col_letter, width in col_widths.items():
+            ws_requests.column_dimensions[col_letter].width = width
+    
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"periodic_stocktake_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
+@app.route('/api/periodic-stocktake/edit-request', methods=['POST'])
+@login_required
+def api_periodic_stocktake_edit_request():
+    db = get_db()
+    data = request.get_json() or {}
+    
+    product_id = data.get('product_id')
+    if not product_id:
+        return jsonify({'success': False, 'message': 'الصنف مطلوب'}), 400
+    
+    details = (data.get('details') or '').strip()
+    if not details:
+        return jsonify({'success': False, 'message': 'تفاصيل التعديل مطلوبة'}), 400
+    
+    db.execute('''
+        INSERT INTO periodic_stocktake_edit_requests (session_id, product_id, product_name, barcode, request_type, details, requested_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    ''', (
+        data.get('session_id'), product_id,
+        data.get('product_name') or '', data.get('barcode') or '',
+        data.get('request_type') or 'edit', details, session['user_id']
+    ))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم رفع طلب تعديل الصنف للمراجعة'})
+
+@app.route('/api/periodic-stocktake/edit-request/<int:request_id>/done', methods=['POST'])
+@login_required
+def api_periodic_edit_request_done(request_id):
+    db = get_db()
+    db.execute('UPDATE periodic_stocktake_edit_requests SET status = %s, reviewed_by = %s, reviewed_at = NOW() WHERE id = %s',
+               ('done', session['user_id'], request_id))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم تأكيد التعديل'})
+
+@app.route('/api/periodic-stocktake/edit-request/<int:request_id>/reject', methods=['POST'])
+@login_required
+def api_periodic_edit_request_reject(request_id):
+    db = get_db()
+    db.execute('UPDATE periodic_stocktake_edit_requests SET status = %s, reviewed_by = %s, reviewed_at = NOW() WHERE id = %s',
+               ('rejected', session['user_id'], request_id))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم رفض الطلب'})
+
+@app.route('/api/periodic-stocktake/scan', methods=['POST'])
+@login_required
+def api_periodic_stocktake_scan():
+    db = get_db()
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+    barcode = (data.get('barcode') or '').strip()
+
+    if not session_id or not barcode:
+        return jsonify({'success': False, 'message': 'بيانات ناقصة'}), 400
+
+    stocktake_session = db.execute('SELECT * FROM periodic_stocktake_sessions WHERE id = %s AND status = %s', (session_id, 'open')).fetchone()
+    if not stocktake_session:
+        return jsonify({'success': False, 'message': 'جلسة الجرد غير موجودة أو مغلقة'}), 400
+
+    try:
+        lookup = api_barcode_lookup(barcode)
+        result = lookup.get_json()
+    except Exception as e:
+        return jsonify({'success': True, 'found': False, 'barcode': barcode, 'error': str(e)})
+    
+    if not result.get('found'):
+        return jsonify({'success': True, 'found': False, 'barcode': barcode})
+
+    product = result['product']
+    units = []
+    base_unit = product.get('unit') or 'حبه'
+    units.append({
+        'unit': base_unit,
+        'barcode': product.get('barcode') or barcode,
+        'pack_size': 1,
+        'conversion_factor': 1,
+        'cost_price': str(product.get('cost_price') or 0),
+        'sell_price': str(product.get('sell_price') or product.get('price') or 0),
+        'is_sale': True,
+        'is_purchase': False
+    })
+
+    extra_units = db.execute('''
+        SELECT unit, barcode, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale
+        FROM product_barcodes
+        WHERE product_id = %s
+        ORDER BY sort_order, conversion_factor, pack_size
+    ''', (product['id'],)).fetchall()
+    seen = {(base_unit, product.get('barcode') or barcode)}
+    for u in extra_units:
+        key = (u.get('unit') or '', u.get('barcode') or '')
+        if key not in seen:
+            units.append({
+                'unit': u.get('unit') or 'حبه',
+                'barcode': u.get('barcode') or '',
+                'pack_size': u.get('pack_size') or 1,
+                'conversion_factor': u.get('conversion_factor') or u.get('pack_size') or 1,
+                'cost_price': str(u.get('cost_price') or 0),
+                'sell_price': str(u.get('sell_price') or 0),
+                'is_purchase': u.get('is_purchase', False),
+                'is_sale': u.get('is_sale', True)
+            })
+            seen.add(key)
+
+    return jsonify({'success': True, 'found': True, 'product': product, 'units': units})
+
+@app.route('/api/periodic-stocktake/save-item', methods=['POST'])
+@login_required
+def api_periodic_stocktake_save_item():
+    db = get_db()
+    try:
+        session_id = int(request.form.get('session_id') or 0)
+        product_id = int(request.form.get('product_id') or 0)
+        barcode = (request.form.get('barcode') or '').strip()
+        product_name = (request.form.get('product_name') or '').strip()
+        selected_unit = (request.form.get('selected_unit') or '').strip() or None
+        pack_size = int(request.form.get('pack_size') or 1)
+        counted_stock = Decimal(str(request.form.get('counted_stock') or 1))
+        production_date = request.form.get('production_date') or None
+        expiry_date = request.form.get('expiry_date') or None
+        batch_no = (request.form.get('batch_no') or '').strip() or None
+        notes = (request.form.get('notes') or '').strip() or None
+        expected_stock = Decimal(str(request.form.get('expected_stock') or 0))
+        display_unit_id = request.form.get('display_unit_id') or None
+        shelf_id = request.form.get('shelf_id') or None
+        if display_unit_id:
+            display_unit_id = int(display_unit_id)
+        if shelf_id:
+            shelf_id = int(shelf_id)
+
+        if not session_id or not product_id:
+            return jsonify({'success': False, 'message': 'بيانات ناقصة'}), 400
+
+        if not production_date:
+            return jsonify({'success': False, 'message': 'تاريخ الإنتاج مطلوب'}), 400
+
+        if not expiry_date:
+            return jsonify({'success': False, 'message': 'تاريخ الانتهاء مطلوب'}), 400
+
+        # Check for duplicate: same product + same shelf in same session
+        if shelf_id:
+            existing = db.execute('''
+                SELECT id, counted_stock, selected_unit, batch_no FROM periodic_stocktake_items 
+                WHERE session_id = %s AND product_id = %s AND shelf_id = %s
+            ''', (session_id, product_id, shelf_id)).fetchone()
+        else:
+            existing = db.execute('''
+                SELECT id, counted_stock, selected_unit, batch_no FROM periodic_stocktake_items 
+                WHERE session_id = %s AND product_id = %s AND shelf_id IS NULL
+            ''', (session_id, product_id)).fetchone()
+        
+        if existing:
+            return jsonify({
+                'success': False, 
+                'message': f'الصنف مسجل مسبقًا في هذا الموقع (الكمية: {existing["counted_stock"]}, الوحدة: {existing["selected_unit"] or "-"}, الباتش: {existing["batch_no"] or "-"})',
+                'duplicate': True,
+                'existing_id': existing['id']
+            }), 400
+
+        image_path = None
+        attachment_path = None
+        voice_note_path = None
+        for field, prefix in [('image', 'periodic_stocktake_item_image'), ('attachment', 'periodic_stocktake_item_attachment'), ('voice_note', 'periodic_stocktake_item_voice')]:
+            file = request.files.get(field)
+            if file and file.filename:
+                ext = os.path.splitext(secure_filename(file.filename))[1] or ('.webm' if field == 'voice_note' else '.jpg')
+                fname = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
+                rel = os.path.join('static', 'uploads', fname).replace('\\', '/')
+                full = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+                file.save(full)
+                if field == 'image':
+                    image_path = rel
+                elif field == 'attachment':
+                    attachment_path = rel
+                elif field == 'voice_note':
+                    voice_note_path = rel
+
+        db.execute('''
+            INSERT INTO periodic_stocktake_items (
+                session_id, product_id, barcode, product_name, unit, selected_unit,
+                pack_size, expected_stock, counted_stock, scan_count, created_by,
+                production_date, expiry_date, batch_no, notes, image_path, attachment_path, voice_note_path,
+                display_unit_id, shelf_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            session_id, product_id, barcode, product_name, selected_unit, selected_unit,
+            pack_size, expected_stock, counted_stock, session['user_id'],
+            production_date, expiry_date, batch_no, notes, image_path, attachment_path, voice_note_path,
+            display_unit_id, shelf_id
+        ))
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم حفظ الصنف في الجرد', 'voice_note_path': voice_note_path or ''})
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل الحفظ: {str(e)}'}), 500
+
+@app.route('/api/periodic-stocktake/item/<int:item_id>', methods=['GET'])
+@login_required
+def api_periodic_stocktake_get_item(item_id):
+    db = get_db()
+    item = db.execute('''
+        SELECT si.*, p.name as product_name_db, du.name as display_unit_name, sh.name as shelf_name
+        FROM periodic_stocktake_items si
+        LEFT JOIN products p ON p.id = si.product_id
+        LEFT JOIN display_units du ON du.id = si.display_unit_id
+        LEFT JOIN shelves sh ON sh.id = si.shelf_id
+        WHERE si.id = %s
+    ''', (item_id,)).fetchone()
+    if not item:
+        return jsonify({'success': False, 'message': 'العنصر غير موجود'}), 404
+    d = dict(item)
+    for k in ['created_at', 'production_date', 'expiry_date']:
+        if d.get(k) and hasattr(d[k], 'strftime'):
+            d[k] = d[k].strftime('%Y-%m-%d')
+    return jsonify({'success': True, 'item': d})
+
+
+@app.route('/api/periodic-stocktake/item/<int:item_id>', methods=['PUT'])
+@login_required
+def api_periodic_stocktake_update_item(item_id):
+    db = get_db()
+    try:
+        item = db.execute('SELECT * FROM periodic_stocktake_items WHERE id = %s', (item_id,)).fetchone()
+        if not item:
+            return jsonify({'success': False, 'message': 'العنصر غير موجود'}), 404
+
+        data = request.get_json() or {}
+        counted_stock = int(data.get('counted_stock', item['counted_stock']))
+        production_date = data.get('production_date') or (item['production_date'].strftime('%Y-%m-%d') if item['production_date'] and hasattr(item['production_date'], 'strftime') else item['production_date'])
+        expiry_date = data.get('expiry_date') or (item['expiry_date'].strftime('%Y-%m-%d') if item['expiry_date'] and hasattr(item['expiry_date'], 'strftime') else item['expiry_date'])
+        batch_no = data.get('batch_no', item['batch_no'])
+        notes = data.get('notes', item['notes'])
+        display_unit_id = data.get('display_unit_id', item['display_unit_id'])
+        shelf_id = data.get('shelf_id', item['shelf_id'])
+
+        db.execute('''
+            UPDATE periodic_stocktake_items 
+            SET counted_stock = %s, production_date = %s, expiry_date = %s, 
+                batch_no = %s, notes = %s, display_unit_id = %s, shelf_id = %s
+            WHERE id = %s
+        ''', (counted_stock, production_date, expiry_date, batch_no, notes, display_unit_id, shelf_id, item_id))
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم تحديث العنصر'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل التحديث: {str(e)}'}), 500
+
+
+@app.route('/api/periodic-stocktake/item/<int:item_id>', methods=['DELETE'])
+@login_required
+def api_periodic_stocktake_delete_item(item_id):
+    db = get_db()
+    try:
+        item = db.execute('SELECT * FROM periodic_stocktake_items WHERE id = %s', (item_id,)).fetchone()
+        if not item:
+            return jsonify({'success': False, 'message': 'العنصر غير موجود'}), 404
+        db.execute('DELETE FROM periodic_stocktake_items WHERE id = %s', (item_id,))
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم حذف العنصر'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل الحذف: {str(e)}'}), 500
+
+
+@app.route('/api/periodic-stocktake/request-product', methods=['POST'])
+@login_required
+def api_periodic_stocktake_request_product():
+    db = get_db()
+    session_id = request.form.get('session_id')
+    barcode = (request.form.get('barcode') or '').strip()
+    product_name = (request.form.get('product_name') or '').strip()
+    category_id = request.form.get('category_id') or None
+    unit = (request.form.get('unit') or '').strip() or None
+    notes = (request.form.get('notes') or '').strip() or None
+    pack_size = request.form.get('pack_size') or 1
+    quantity_counted = Decimal(str(request.form.get('quantity_counted') or 1))
+    production_date = request.form.get('production_date') or None
+    expiry_date = request.form.get('expiry_date') or None
+    batch_no = (request.form.get('batch_no') or '').strip() or None
+    cost_price = request.form.get('cost_price') or None
+    sell_price = request.form.get('sell_price') or None
+    display_unit_id = request.form.get('display_unit_id') or None
+    shelf_id = request.form.get('shelf_id') or None
+    if display_unit_id:
+        display_unit_id = int(display_unit_id)
+    if shelf_id:
+        shelf_id = int(shelf_id)
+
+    def clean_text(v):
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            v = str(v)
+        return v.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore').strip() or None
+
+    barcode = clean_text(barcode) or ''
+    product_name = clean_text(product_name) or ''
+    unit = clean_text(unit)
+    notes = clean_text(notes)
+    batch_no = clean_text(batch_no)
+
+    if not barcode:
+        return jsonify({'success': False, 'message': 'الباركود مطلوب'}), 400
+
+    image_path = None
+    attachment_path = None
+    for field, prefix in [('image', 'periodic_stocktake_image'), ('attachment', 'periodic_stocktake_attachment')]:
+        file = request.files.get(field)
+        if file and file.filename:
+            ext = os.path.splitext(secure_filename(file.filename))[1] or '.jpg'
+            fname = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
+            rel = os.path.join('uploads', fname).replace('\\', '/')
+            full = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+            file.save(full)
+            if field == 'image':
+                image_path = rel
+            else:
+                attachment_path = rel
+
+    db.execute('''
+        INSERT INTO periodic_stocktake_product_requests (
+            session_id, barcode, product_name, category_id, unit, notes,
+            image_path, attachment_path, status, requested_by,
+            pack_size, quantity_counted, production_date, expiry_date, batch_no, cost_price, sell_price,
+            display_unit_id, shelf_id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ''', (
+        session_id or None, barcode, product_name or None, category_id, unit, notes,
+        image_path, attachment_path, session['user_id'],
+        pack_size, quantity_counted, production_date, expiry_date, batch_no,
+        Decimal(str(cost_price)) if cost_price else None,
+        Decimal(str(sell_price)) if sell_price else None,
+        display_unit_id, shelf_id
+    ))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم رفع طلب إضافة الصنف للمراجعة'})
+
+# ═══════════════════════════════════════════════════════════════
 # تفاصيل الصنف
 # ═══════════════════════════════════════════════════════════════
 
@@ -4101,18 +5244,22 @@ def api_supplier_products():
     # دعم الإضافة السريعة من نافذة الفاتورة
     if data.get('quick_add'):
         supplier_id = data.get('supplier_id')
-        product_id = data.get('product_id')
+        product_id = data.get('product_id') or None
         supplier_product_name = data.get('supplier_product_name', '').strip()
         pack_size = data.get('pack_size', 1)
+        supplier_unit = (data.get('supplier_unit') or 'كرتون').strip()
+        is_kit = bool(data.get('is_kit'))
         
-        if not supplier_id or not product_id or not supplier_product_name:
+        if not supplier_id or not supplier_product_name:
             return jsonify({'success': False, 'message': 'بيانات ناقصة'})
+        if not is_kit and not product_id:
+            return jsonify({'success': False, 'message': 'اختر صنفاً داخلياً أو فعّل خيار الطقم'})
         
         row = db.execute('''
-            INSERT INTO supplier_products (supplier_id, product_id, supplier_product_name, pack_size)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO supplier_products (supplier_id, product_id, supplier_product_name, supplier_unit, pack_size, is_kit)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
-        ''', (supplier_id, product_id, supplier_product_name, pack_size)).fetchone()
+        ''', (supplier_id, product_id, supplier_product_name, supplier_unit, pack_size, is_kit)).fetchone()
         db.commit()
         
         new_id = row['id']
@@ -4121,7 +5268,7 @@ def api_supplier_products():
         new_item = db.execute('''
             SELECT sp.*, p.name as product_name
             FROM supplier_products sp
-            JOIN products p ON p.id = sp.product_id
+            LEFT JOIN products p ON p.id = sp.product_id
             WHERE sp.id = %s
         ''', (new_id,)).fetchone()
         
@@ -4420,6 +5567,221 @@ def api_product_prices():
     return jsonify({'success': True, 'message': 'تم حفظ السعر'})
 
 # ═══════════════════════════════════════════════════════════════
+# إدارة المخازن
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/warehouses')
+@role_required('manager')
+def warehouses_page():
+    db = get_db()
+    warehouses_list = db.execute('''
+        SELECT w.*, u.display_name as manager_name
+        FROM warehouses w
+        LEFT JOIN users u ON u.id = w.manager_id
+        ORDER BY w.id
+    ''').fetchall()
+    users_list = db.execute("SELECT id, display_name FROM users WHERE is_active=TRUE ORDER BY display_name").fetchall()
+    warehouses_json = [dict(w) for w in warehouses_list]
+    return render_template('warehouses.html', warehouses=warehouses_list, warehouses_json=warehouses_json, users=users_list)
+
+@app.route('/api/warehouses-crud', methods=['POST'])
+@role_required('manager')
+def api_warehouses_crud():
+    db = get_db()
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    wtype = data.get('type', 'warehouse')
+    address = data.get('address', '')
+    manager_id = data.get('manager_id') or None
+    
+    if not name:
+        return jsonify({'success': False, 'message': 'اسم المخزن مطلوب'})
+    
+    row = db.execute('''
+        INSERT INTO warehouses (name, type, address, manager_id) VALUES (%s, %s, %s, %s) RETURNING id
+    ''', (name, wtype, address, manager_id)).fetchone()
+    db.commit()
+    return jsonify({'success': True, 'id': row['id'], 'message': 'تم إضافة المخزن'})
+
+@app.route('/api/warehouses-crud/<int:wid>', methods=['PUT', 'DELETE'])
+@role_required('manager')
+def api_warehouse_crud_detail(wid):
+    db = get_db()
+    if request.method == 'DELETE':
+        db.execute('UPDATE warehouses SET is_active = FALSE WHERE id = %s', (wid,))
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم حذف المخزن'})
+    
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': 'اسم المخزن مطلوب'})
+    
+    db.execute('''
+        UPDATE warehouses SET name=%s, type=%s, address=%s, manager_id=%s WHERE id=%s
+    ''', (name, data.get('type', 'warehouse'), data.get('address', ''), data.get('manager_id') or None, wid))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم تحديث المخزن'})
+
+# ═══════════════════════════════════════════════════════════════
+# التحويلات الداخلية
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/internal-transfers')
+@role_required('manager', 'warehouse')
+def internal_transfers_page():
+    db = get_db()
+    transfers = db.execute('''
+        SELECT it.*, fw.name as from_name, tw.name as to_name, u.display_name as created_by_name
+        FROM internal_transfers it
+        JOIN warehouses fw ON fw.id = it.from_warehouse_id
+        JOIN warehouses tw ON tw.id = it.to_warehouse_id
+        LEFT JOIN users u ON u.id = it.created_by
+        ORDER BY it.created_at DESC
+    ''').fetchall()
+    warehouses_list = db.execute("SELECT id, name, type FROM warehouses WHERE is_active = TRUE ORDER BY name").fetchall()
+    return render_template('internal_transfers.html', transfers=transfers, warehouses=warehouses_list)
+
+@app.route('/api/internal-transfers', methods=['POST'])
+@role_required('manager', 'warehouse')
+def api_create_transfer():
+    db = get_db()
+    data = request.get_json(silent=True) or {}
+    from_id = data.get('from_warehouse_id')
+    to_id = data.get('to_warehouse_id')
+    items = data.get('items', [])
+    notes = data.get('notes', '')
+    
+    if not from_id or not to_id or from_id == to_id:
+        return jsonify({'success': False, 'message': 'اختر مخزنين مختلفين'})
+    if not items:
+        return jsonify({'success': False, 'message': 'أضف صنف واحد على الأقل'})
+    
+    row = db.execute('''
+        INSERT INTO internal_transfers (from_warehouse_id, to_warehouse_id, notes, created_by)
+        VALUES (%s, %s, %s, %s) RETURNING id
+    ''', (from_id, to_id, notes, session['user_id'])).fetchone()
+    transfer_id = row['id']
+    
+    for item in items:
+        pid = item.get('product_id')
+        qty = float(item.get('quantity', 0))
+        if pid and qty > 0:
+            db.execute('''
+                INSERT INTO internal_transfer_items (transfer_id, product_id, quantity)
+                VALUES (%s, %s, %s)
+            ''', (transfer_id, pid, qty))
+    
+    db.commit()
+    return jsonify({'success': True, 'id': transfer_id, 'message': 'تم إنشاء التحويل'})
+
+@app.route('/api/internal-transfers/<int:tid>/complete', methods=['POST'])
+@role_required('manager', 'warehouse')
+def api_complete_transfer(tid):
+    db = get_db()
+    transfer = db.execute('SELECT * FROM internal_transfers WHERE id = %s', (tid,)).fetchone()
+    if not transfer:
+        return jsonify({'success': False, 'message': 'التحويل غير موجود'})
+    if transfer['status'] != 'pending':
+        return jsonify({'success': False, 'message': 'التحويل ليس في حالة انتظار'})
+    
+    items = db.execute('SELECT * FROM internal_transfer_items WHERE transfer_id = %s', (tid,)).fetchall()
+    
+    for item in items:
+        pid = item['product_id']
+        qty = float(item['quantity'])
+        
+        # خصم من المخزن المرسل
+        db.execute('''
+            INSERT INTO warehouse_stock (product_id, warehouse_id, quantity) VALUES (%s, %s, 0)
+            ON CONFLICT (product_id, warehouse_id) DO NOTHING
+        ''', (pid, transfer['from_warehouse_id']))
+        db.execute('''
+            UPDATE warehouse_stock SET quantity = quantity - %s
+            WHERE product_id = %s AND warehouse_id = %s
+        ''', (qty, pid, transfer['from_warehouse_id']))
+        
+        # إضافة للمخزن المستلم
+        db.execute('''
+            INSERT INTO warehouse_stock (product_id, warehouse_id, quantity) VALUES (%s, %s, 0)
+            ON CONFLICT (product_id, warehouse_id) DO NOTHING
+        ''', (pid, transfer['to_warehouse_id']))
+        db.execute('''
+            UPDATE warehouse_stock SET quantity = quantity + %s
+            WHERE product_id = %s AND warehouse_id = %s
+        ''', (qty, pid, transfer['to_warehouse_id']))
+        
+        # حركات المخزون
+        db.execute('''
+            INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, warehouse_id, created_by)
+            VALUES (%s, 'out', %s, 'transfer', %s, %s, %s)
+        ''', (pid, qty, tid, transfer['from_warehouse_id'], session['user_id']))
+        db.execute('''
+            INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, warehouse_id, created_by)
+            VALUES (%s, 'in', %s, 'transfer', %s, %s, %s)
+        ''', (pid, qty, tid, transfer['to_warehouse_id'], session['user_id']))
+    
+    db.execute("UPDATE internal_transfers SET status = 'completed', completed_at = NOW() WHERE id = %s", (tid,))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم استلام التحويل وتحديث المخزون'})
+
+@app.route('/api/internal-transfers/<int:tid>/cancel', methods=['POST'])
+@role_required('manager', 'warehouse')
+def api_cancel_transfer(tid):
+    db = get_db()
+    db.execute("UPDATE internal_transfers SET status = 'cancelled' WHERE id = %s AND status = 'pending'", (tid,))
+    db.commit()
+    return jsonify({'success': True, 'message': 'تم إلغاء التحويل'})
+
+@app.route('/api/internal-transfers/<int:tid>/items')
+@role_required('manager', 'warehouse')
+def api_transfer_items(tid):
+    db = get_db()
+    items = db.execute('''
+        SELECT iti.*, p.name as product_name
+        FROM internal_transfer_items iti
+        JOIN products p ON p.id = iti.product_id
+        WHERE iti.transfer_id = %s
+    ''', (tid,)).fetchall()
+    return jsonify([dict(i) for i in items])
+
+# ═══════════════════════════════════════════════════════════════
+# API أطقم الموردين
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/supplier-products/<int:sp_id>/kit-items', methods=['GET', 'POST'])
+@role_required('manager')
+def api_kit_items(sp_id):
+    db = get_db()
+    
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        items = data.get('items', [])
+        # حذف القديمة
+        db.execute('DELETE FROM sorting_rules WHERE supplier_product_id = %s', (sp_id,))
+        # إضافة الجديدة
+        for item in items:
+            pid = item.get('product_id')
+            if pid:
+                db.execute('''
+                    INSERT INTO sorting_rules (supplier_product_id, allowed_product_id)
+                    VALUES (%s, %s) ON CONFLICT DO NOTHING
+                ''', (sp_id, pid))
+        # تحديث is_kit
+        db.execute('UPDATE supplier_products SET is_kit = %s WHERE id = %s', (len(items) > 0, sp_id))
+        db.commit()
+        return jsonify({'success': True, 'message': 'تم تحديث مكونات الطقم'})
+    
+    # GET
+    items = db.execute('''
+        SELECT sr.allowed_product_id as product_id, p.name as product_name
+        FROM sorting_rules sr
+        JOIN products p ON p.id = sr.allowed_product_id
+        WHERE sr.supplier_product_id = %s
+    ''', (sp_id,)).fetchall()
+    return jsonify([dict(i) for i in items])
+
+# ═══════════════════════════════════════════════════════════════
 # فواتير المورد
 # ═══════════════════════════════════════════════════════════════
 
@@ -4429,10 +5791,12 @@ def supplier_invoices():
     db = get_db()
     
     invoices = db.execute('''
-        SELECT si.*, s.name as supplier_name, u.display_name as created_by_name
+        SELECT si.*, s.name as supplier_name, u.display_name as created_by_name,
+               w.name as warehouse_name
         FROM supplier_invoices si
         JOIN suppliers s ON s.id = si.supplier_id
         JOIN users u ON u.id = si.created_by
+        LEFT JOIN warehouses w ON w.id = si.warehouse_id
         ORDER BY si.created_at DESC
     ''').fetchall()
     
@@ -4518,13 +5882,9 @@ def new_supplier_invoice():
         if not data.get('invoice_date'):
             return jsonify({'success': False, 'message': 'تاريخ الفاتورة مطلوب'})
         
-        try:
-            total_amount = float(data.get('total_amount', 0))
-        except (TypeError, ValueError):
-            return jsonify({'success': False, 'message': 'إجمالي الفاتورة غير صحيح'})
-        
-        if total_amount <= 0:
-            return jsonify({'success': False, 'message': 'إجمالي الفاتورة يجب أن يكون أكبر من صفر'})
+        warehouse_id = data.get('warehouse_id')
+        if not warehouse_id:
+            return jsonify({'success': False, 'message': 'وجهة الاستلام مطلوبة'})
         
         if not items:
             return jsonify({'success': False, 'message': 'يجب إضافة بند واحد على الأقل'})
@@ -4533,55 +5893,81 @@ def new_supplier_invoice():
             'SELECT id FROM suppliers WHERE id = %s AND is_active = TRUE',
             (supplier_id,)
         ).fetchone()
-        
         if not supplier:
             return jsonify({'success': False, 'message': 'المورد غير موجود أو غير نشط'})
+        
+        # حساب الإجمالي
+        total_amount = 0
+        for item in items:
+            total_amount += float(item.get('total_price', 0))
         
         # إنشاء رقم فاتورة تلقائي
         last = db.execute('SELECT MAX(id) as max_id FROM supplier_invoices').fetchone()['max_id'] or 0
         invoice_number = f"SI-{datetime.now().strftime('%Y%m')}-{last+1:04d}"
         
         row = db.execute('''
-            INSERT INTO supplier_invoices (invoice_number, supplier_id, invoice_date, total_amount, notes, created_by)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO supplier_invoices (invoice_number, supplier_id, invoice_date, total_amount, warehouse_id, notes, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             invoice_number, supplier_id, data['invoice_date'],
-            total_amount, data.get('notes'), session['user_id']
+            total_amount, warehouse_id, data.get('notes'), session['user_id']
         )).fetchone()
         invoice_id = row['id']
         
         # إضافة البنود
         for item in items:
-            try:
-                supplier_product_id = int(item['supplier_product_id'])
-                quantity = float(item['quantity'])
-                unit_price = float(item['unit_price'])
-                line_total = float(item['total_price'])
-            except (KeyError, TypeError, ValueError):
-                return jsonify({'success': False, 'message': 'بيانات البنود غير صحيحة'})
+            item_type = item.get('type', 'direct')
             
-            if quantity <= 0 or unit_price < 0 or line_total < 0:
-                return jsonify({'success': False, 'message': 'قيم البنود غير صحيحة'})
+            if item_type == 'direct':
+                product_id = item.get('product_id')
+                quantity = float(item.get('quantity', 0))
+                unit_price = float(item.get('unit_price', 0))
+                line_total = float(item.get('total_price', 0))
+                unit = item.get('unit', '')
+                conversion_factor = float(item.get('conversion_factor', 1))
+                base_quantity = quantity * conversion_factor
+                supplier_product_id = item.get('supplier_product_id') or None
+                
+                db.execute('''
+                    INSERT INTO supplier_invoice_items 
+                    (invoice_id, product_id, supplier_product_id, quantity, unit_price, total_price, unit, conversion_factor, base_quantity, is_kit_item)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE)
+                ''', (invoice_id, product_id, supplier_product_id, quantity, unit_price, line_total, unit, conversion_factor, base_quantity))
             
-            supplier_product = db.execute(
-                'SELECT id FROM supplier_products WHERE id = %s AND supplier_id = %s',
-                (supplier_product_id, supplier_id)
-            ).fetchone()
-            
-            if not supplier_product:
-                return jsonify({'success': False, 'message': 'أحد أصناف المورد غير صحيح'})
-            
-            db.execute('''
-                INSERT INTO supplier_invoice_items (invoice_id, supplier_product_id, quantity, unit_price, total_price)
-                VALUES (%s, %s, %s, %s, %s)
-            ''', (invoice_id, supplier_product_id, quantity, unit_price, line_total))
+            elif item_type == 'kit':
+                supplier_product_id = item.get('supplier_product_id')
+                quantity = float(item.get('quantity', 0))
+                unit_price = float(item.get('unit_price', 0))
+                line_total = float(item.get('total_price', 0))
+                
+                # بند الطقم الأب
+                parent_row = db.execute('''
+                    INSERT INTO supplier_invoice_items 
+                    (invoice_id, supplier_product_id, quantity, unit_price, total_price, is_kit_item)
+                    VALUES (%s, %s, %s, %s, %s, FALSE)
+                    RETURNING id
+                ''', (invoice_id, supplier_product_id, quantity, unit_price, line_total)).fetchone()
+                parent_item_id = parent_row['id']
+                
+                # البنود الفرعية
+                sub_items = item.get('sub_items', [])
+                for sub in sub_items:
+                    sub_pid = sub.get('product_id')
+                    sub_qty = float(sub.get('quantity', 0))
+                    if sub_pid and sub_qty > 0:
+                        db.execute('''
+                            INSERT INTO supplier_invoice_items 
+                            (invoice_id, product_id, quantity, unit_price, total_price, is_kit_item, parent_item_id)
+                            VALUES (%s, %s, %s, 0, 0, TRUE, %s)
+                        ''', (invoice_id, sub_pid, sub_qty, parent_item_id))
         
         db.commit()
         return jsonify({'success': True, 'id': invoice_id, 'invoice_number': invoice_number})
     
     suppliers = db.execute('SELECT * FROM suppliers WHERE is_active=TRUE ORDER BY name').fetchall()
-    return render_template('supplier_invoice_form.html', suppliers=suppliers)
+    warehouses_list = db.execute('SELECT id, name, type FROM warehouses WHERE is_active = TRUE ORDER BY name').fetchall()
+    return render_template('supplier_invoice_form.html', suppliers=suppliers, warehouses=warehouses_list)
 
 @app.route('/api/supplier/<int:supplier_id>/products')
 @role_required('manager', 'agent')
@@ -4590,327 +5976,128 @@ def api_supplier_product_list(supplier_id):
     items = db.execute('''
         SELECT sp.*, p.name as product_name
         FROM supplier_products sp
-        JOIN products p ON p.id = sp.product_id
+        LEFT JOIN products p ON p.id = sp.product_id
         WHERE sp.supplier_id = %s
         ORDER BY sp.supplier_product_name
     ''', (supplier_id,)).fetchall()
     return jsonify([dict(i) for i in items])
 
 # ═══════════════════════════════════════════════════════════════
-# فاتورة المندوب (الفرز)
+# فاتورة المندوب (ملغاة — redirect)
 # ═══════════════════════════════════════════════════════════════
 
 @app.route('/agent-invoices')
 @role_required('manager', 'agent')
 def agent_invoices():
-    db = get_db()
-    
-    invoices = db.execute('''
-        SELECT ai.*, si.invoice_number, s.name as supplier_name, 
-               u.display_name as agent_name, ur.display_name as received_by_name
-        FROM agent_invoices ai
-        JOIN supplier_invoices si ON si.id = ai.supplier_invoice_id
-        JOIN suppliers s ON s.id = si.supplier_id
-        JOIN users u ON u.id = ai.agent_id
-        LEFT JOIN users ur ON ur.id = ai.received_by
-        ORDER BY ai.created_at DESC
-    ''').fetchall()
-    
-    # فواتير بانتظار الفرز
-    pending = db.execute('''
-        SELECT si.*, s.name as supplier_name
-        FROM supplier_invoices si
-        JOIN suppliers s ON s.id = si.supplier_id
-        WHERE si.status = 'pending'
-        ORDER BY si.created_at
-    ''').fetchall()
-    
-    return render_template('agent_invoices.html', invoices=invoices, pending=pending)
+    flash('تم نقل نظام الفرز إلى نظام المشتريات الجديد', 'info')
+    return redirect(url_for('supplier_invoices'))
 
-@app.route('/agent-invoices/<int:supplier_invoice_id>/sort', methods=['GET', 'POST'])
-@role_required('manager', 'agent')
-def sort_invoice(supplier_invoice_id):
-    db = get_db()
-
-    invoice = db.execute('''
-        SELECT si.*, s.name as supplier_name
-        FROM supplier_invoices si
-        JOIN suppliers s ON s.id = si.supplier_id
-        WHERE si.id = %s
-    ''', (supplier_invoice_id,)).fetchone()
-
-    if not invoice:
-        if request.method == 'POST':
-            return jsonify({'success': False, 'message': 'فاتورة المورد غير موجودة'}), 404
-        flash('فاتورة المورد غير موجودة', 'error')
-        return redirect(url_for('agent_invoices'))
-    
-    if request.method == 'POST':
-        if invoice['status'] != 'pending':
-            return jsonify({'success': False, 'message': 'لا يمكن فرز فاتورة ليست في حالة انتظار'})
-        
-        data = request.get_json(silent=True) or {}
-        raw_items = data.get('items') or []
-        
-        if not raw_items:
-            return jsonify({'success': False, 'message': 'يجب إضافة بند واحد على الأقل للفرز'})
-        
-        existing_processing = db.execute('''
-            SELECT id FROM agent_invoices
-            WHERE supplier_invoice_id = %s AND status IN ('draft', 'submitted')
-        ''', (supplier_invoice_id,)).fetchone()
-        
-        if existing_processing:
-            return jsonify({'success': False, 'message': 'يوجد بالفعل فاتورة فرز نشطة لهذه الفاتورة'})
-        
-        parsed_items = []
-        requested_quantities = {}
-        
-        for item in raw_items:
-            try:
-                supplier_invoice_item_id = int(item['supplier_invoice_item_id'])
-                product_id = int(item['product_id'])
-                quantity = float(item['quantity'])
-            except (KeyError, TypeError, ValueError):
-                return jsonify({'success': False, 'message': 'بيانات الفرز غير صحيحة'})
-            
-            if quantity <= 0:
-                return jsonify({'success': False, 'message': 'كمية الفرز يجب أن تكون أكبر من صفر'})
-            
-            parsed_items.append({
-                'supplier_invoice_item_id': supplier_invoice_item_id,
-                'product_id': product_id,
-                'quantity': quantity,
-            })
-            requested_quantities[supplier_invoice_item_id] = requested_quantities.get(supplier_invoice_item_id, 0) + quantity
-        
-        supplier_items_map = {}
-        for supplier_invoice_item_id, requested_qty in requested_quantities.items():
-            supplier_item = db.execute('''
-                SELECT id, supplier_product_id, quantity, sorted_quantity
-                FROM supplier_invoice_items
-                WHERE id = %s AND invoice_id = %s
-            ''', (supplier_invoice_item_id, supplier_invoice_id)).fetchone()
-            
-            if not supplier_item:
-                return jsonify({'success': False, 'message': 'أحد بنود الفاتورة غير موجود'})
-            
-            available_qty = float(supplier_item['quantity']) - float(supplier_item['sorted_quantity'])
-            if requested_qty > available_qty:
-                return jsonify({'success': False, 'message': f'الكمية المطلوبة أكبر من المتاح ({available_qty:,.2f})'})
-            
-            supplier_items_map[supplier_invoice_item_id] = supplier_item
-        
-        for item in parsed_items:
-            supplier_item = supplier_items_map[item['supplier_invoice_item_id']]
-            allowed = db.execute('''
-                SELECT 1 FROM sorting_rules
-                WHERE supplier_product_id = %s AND allowed_product_id = %s
-            ''', (supplier_item['supplier_product_id'], item['product_id'])).fetchone()
-            
-            if not allowed:
-                return jsonify({'success': False, 'message': 'الصنف المختار غير مسموح به في قواعد الفرز'})
-        
-        # إنشاء فاتورة المندوب
-        cursor = db.execute('''
-            INSERT INTO agent_invoices (supplier_invoice_id, agent_id, status)
-            VALUES (%s, %s, 'draft')
-        ''', (supplier_invoice_id, session['user_id']))
-        agent_invoice_id = cursor.lastrowid
-        
-        # إضافة بنود الفرز
-        for item in parsed_items:
-            db.execute('''
-                INSERT INTO agent_invoice_items (agent_invoice_id, supplier_invoice_item_id, product_id, quantity)
-                VALUES (%s, %s, %s, %s)
-            ''', (agent_invoice_id, item['supplier_invoice_item_id'], 
-                  item['product_id'], item['quantity']))
-            
-            # تحديث الكمية المفرزة في فاتورة المورد
-            db.execute('''
-                UPDATE supplier_invoice_items 
-                SET sorted_quantity = sorted_quantity + %s
-                WHERE id = %s
-            ''', (item['quantity'], item['supplier_invoice_item_id']))
-        
-        # تحديث حالة فاتورة المورد
-        db.execute("UPDATE supplier_invoices SET status = 'sorting' WHERE id = %s", (supplier_invoice_id,))
-        
-        db.commit()
-        return jsonify({'success': True, 'id': agent_invoice_id})
-    
-    items = db.execute('''
-        SELECT sii.*, sp.supplier_product_name, sp.pack_size, p.name as product_name
-        FROM supplier_invoice_items sii
-        JOIN supplier_products sp ON sp.id = sii.supplier_product_id
-        JOIN products p ON p.id = sp.product_id
-        WHERE sii.invoice_id = %s
-    ''', (supplier_invoice_id,)).fetchall()
-    
-    # جلب قواعد الفرز لكل صنف
-    items_with_rules = []
-    for item in items:
-        rules = db.execute('''
-            SELECT sr.allowed_product_id, p.name as product_name
-            FROM sorting_rules sr
-            JOIN products p ON p.id = sr.allowed_product_id
-            WHERE sr.supplier_product_id = %s
-        ''', (item['supplier_product_id'],)).fetchall()
-        
-        items_with_rules.append({
-            **dict(item),
-            'allowed_products': [dict(r) for r in rules]
-        })
-    
-    return render_template('sort_invoice.html', invoice=invoice, items=items_with_rules)
-
-@app.route('/api/agent-invoices/<int:id>/submit', methods=['POST'])
-@role_required('manager', 'agent')
-def submit_agent_invoice(id):
-    db = get_db()
-    
-    agent_invoice = db.execute('''
-        SELECT id, supplier_invoice_id, agent_id, status
-        FROM agent_invoices
-        WHERE id = %s
-    ''', (id,)).fetchone()
-    
-    if not agent_invoice:
-        return jsonify({'success': False, 'message': 'فاتورة المندوب غير موجودة'}), 404
-    
-    if session.get('role') == 'agent' and agent_invoice['agent_id'] != session.get('user_id'):
-        return jsonify({'success': False, 'message': 'لا يمكنك تسليم فاتورة ليست تابعة لك'}), 403
-    
-    if agent_invoice['status'] != 'draft':
-        return jsonify({'success': False, 'message': 'لا يمكن تسليم فاتورة ليست في حالة مسودة'})
-    
-    supplier_invoice = db.execute(
-        'SELECT id, status FROM supplier_invoices WHERE id = %s',
-        (agent_invoice['supplier_invoice_id'],)
-    ).fetchone()
-    
-    if not supplier_invoice:
-        return jsonify({'success': False, 'message': 'فاتورة المورد غير موجودة'}), 404
-    
-    if supplier_invoice['status'] not in ('pending', 'sorting'):
-        return jsonify({'success': False, 'message': 'حالة فاتورة المورد لا تسمح بالتسليم'})
-    
-    updated_rows = db.execute('''
-        UPDATE agent_invoices SET status = 'submitted', submitted_at = %s
-        WHERE id = %s AND status = 'draft'
-    ''', (datetime.now().isoformat(), id)).rowcount
-    
-    if updated_rows == 0:
-        return jsonify({'success': False, 'message': 'تم تحديث حالة الفاتورة بواسطة مستخدم آخر'})
-    
-    db.execute("UPDATE supplier_invoices SET status = 'delivered' WHERE id = %s", (agent_invoice['supplier_invoice_id'],))
-    
-    db.commit()
-    return jsonify({'success': True, 'message': 'تم تسليم الفاتورة للمخزن'})
+# (sort_invoice, submit_agent_invoice routes removed — system migrated to direct receiving)
 
 # ═══════════════════════════════════════════════════════════════
-# استلام المخزن
+# استلام المخزن (نظام جديد — استلام مباشر من فواتير المورد)
 # ═══════════════════════════════════════════════════════════════
 
 @app.route('/warehouse')
 @role_required('manager', 'warehouse')
 def warehouse():
     db = get_db()
+    warehouse_id = request.args.get('warehouse_id', type=int)
     
     # فواتير بانتظار الاستلام
-    pending = db.execute('''
-        SELECT ai.*, si.invoice_number, s.name as supplier_name, u.display_name as agent_name
-        FROM agent_invoices ai
-        JOIN supplier_invoices si ON si.id = ai.supplier_invoice_id
+    q = '''
+        SELECT si.*, s.name as supplier_name, u.display_name as created_by_name,
+               w.name as warehouse_name
+        FROM supplier_invoices si
         JOIN suppliers s ON s.id = si.supplier_id
-        JOIN users u ON u.id = ai.agent_id
-        WHERE ai.status = 'submitted'
-        ORDER BY ai.submitted_at
-    ''').fetchall()
+        JOIN users u ON u.id = si.created_by
+        LEFT JOIN warehouses w ON w.id = si.warehouse_id
+        WHERE si.status = 'pending'
+    '''
+    params = []
+    if warehouse_id:
+        q += ' AND si.warehouse_id = %s'
+        params.append(warehouse_id)
+    q += ' ORDER BY si.created_at'
+    pending = db.execute(q, params).fetchall() if params else db.execute(q).fetchall()
     
     # آخر الاستلامات
-    recent = db.execute('''
-        SELECT ai.*, si.invoice_number, s.name as supplier_name, 
-               u.display_name as agent_name, ur.display_name as received_by_name
-        FROM agent_invoices ai
-        JOIN supplier_invoices si ON si.id = ai.supplier_invoice_id
+    q2 = '''
+        SELECT si.*, s.name as supplier_name, u.display_name as created_by_name,
+               w.name as warehouse_name
+        FROM supplier_invoices si
         JOIN suppliers s ON s.id = si.supplier_id
-        JOIN users u ON u.id = ai.agent_id
-        JOIN users ur ON ur.id = ai.received_by
-        WHERE ai.status = 'received'
-        ORDER BY ai.received_at DESC
-        LIMIT 10
-    ''').fetchall()
+        JOIN users u ON u.id = si.created_by
+        LEFT JOIN warehouses w ON w.id = si.warehouse_id
+        WHERE si.status = 'received'
+    '''
+    if warehouse_id:
+        q2 += ' AND si.warehouse_id = %s'
+    q2 += ' ORDER BY si.created_at DESC LIMIT 10'
+    recent = db.execute(q2, (warehouse_id,)).fetchall() if warehouse_id else db.execute(q2).fetchall()
     
-    return render_template('warehouse.html', pending=pending, recent=recent)
+    warehouses_list = db.execute("SELECT id, name, type FROM warehouses WHERE is_active = TRUE ORDER BY name").fetchall()
+    return render_template('warehouse.html', pending=pending, recent=recent, 
+                         warehouses=warehouses_list, selected_warehouse_id=warehouse_id)
 
-@app.route('/api/warehouse/receive/<int:agent_invoice_id>', methods=['POST'])
+@app.route('/api/warehouse/receive/<int:invoice_id>', methods=['POST'])
 @role_required('manager', 'warehouse')
-def receive_invoice(agent_invoice_id):
+def receive_invoice(invoice_id):
     db = get_db()
     
-    agent_invoice = db.execute('''
-        SELECT id, supplier_invoice_id, status
-        FROM agent_invoices
-        WHERE id = %s
-    ''', (agent_invoice_id,)).fetchone()
+    invoice = db.execute('SELECT * FROM supplier_invoices WHERE id = %s', (invoice_id,)).fetchone()
+    if not invoice:
+        return jsonify({'success': False, 'message': 'الفاتورة غير موجودة'}), 404
     
-    if not agent_invoice:
-        return jsonify({'success': False, 'message': 'فاتورة المندوب غير موجودة'}), 404
+    if invoice['status'] == 'received':
+        return jsonify({'success': False, 'message': 'تم استلام هذه الفاتورة مسبقا'})
     
-    if agent_invoice['status'] == 'received':
-        return jsonify({'success': False, 'message': 'تم استلام هذه الفاتورة مسبقاً'})
+    if invoice['status'] != 'pending':
+        return jsonify({'success': False, 'message': 'لا يمكن استلام فاتورة ليست في حالة انتظار'})
     
-    if agent_invoice['status'] != 'submitted':
-        return jsonify({'success': False, 'message': 'لا يمكن استلام فاتورة ليست في حالة التسليم'})
+    warehouse_id = invoice['warehouse_id']
     
-    supplier_invoice = db.execute(
-        'SELECT id, status FROM supplier_invoices WHERE id = %s',
-        (agent_invoice['supplier_invoice_id'],)
-    ).fetchone()
-    
-    if not supplier_invoice:
-        return jsonify({'success': False, 'message': 'فاتورة المورد غير موجودة'}), 404
-    
-    if supplier_invoice['status'] != 'delivered':
-        return jsonify({'success': False, 'message': 'حالة فاتورة المورد لا تسمح بالاستلام'})
-    
-    # جلب البنود وتحديث المخزون
+    # جلب بنود الفاتورة (بنود مباشرة + بنود فرعية للأطقم)
     items = db.execute('''
-        SELECT aii.product_id, aii.quantity
-        FROM agent_invoice_items aii
-        WHERE aii.agent_invoice_id = %s
-    ''', (agent_invoice_id,)).fetchall()
+        SELECT sii.product_id, sii.quantity, sii.base_quantity, sii.conversion_factor, sii.is_kit_item
+        FROM supplier_invoice_items sii
+        WHERE sii.invoice_id = %s AND sii.product_id IS NOT NULL
+    ''', (invoice_id,)).fetchall()
     
     if not items:
-        return jsonify({'success': False, 'message': 'لا توجد بنود للاستلام في هذه الفاتورة'})
-    
-    # تحديث حالة فاتورة المندوب
-    updated_rows = db.execute('''
-        UPDATE agent_invoices 
-        SET status = 'received', received_at = %s, received_by = %s
-        WHERE id = %s AND status = 'submitted'
-    ''', (datetime.now().isoformat(), session['user_id'], agent_invoice_id)).rowcount
-    
-    if updated_rows == 0:
-        return jsonify({'success': False, 'message': 'تم تحديث حالة الفاتورة بواسطة مستخدم آخر'})
+        return jsonify({'success': False, 'message': 'لا توجد بنود للاستلام'})
     
     for item in items:
-        # تحديث المخزون
-        db.execute('''
-            UPDATE products SET current_stock = current_stock + %s
-            WHERE id = %s
-        ''', (item['quantity'], item['product_id']))
+        pid = item['product_id']
+        # للبنود المباشرة: نستخدم base_quantity (الكمية × معامل التحويل)
+        # للبنود الفرعية: quantity هي الكمية النهائية
+        if item['is_kit_item']:
+            qty = float(item['quantity'])
+        else:
+            qty = float(item['base_quantity']) if item['base_quantity'] else float(item['quantity'])
         
-        # تسجيل حركة المخزون
+        # تحديث المخزون العام
+        db.execute('UPDATE products SET current_stock = current_stock + %s WHERE id = %s', (qty, pid))
+        
+        # تحديث مخزون المخزن
+        if warehouse_id:
+            db.execute('''
+                INSERT INTO warehouse_stock (product_id, warehouse_id, quantity) VALUES (%s, %s, 0)
+                ON CONFLICT (product_id, warehouse_id) DO NOTHING
+            ''', (pid, warehouse_id))
+            db.execute('''
+                UPDATE warehouse_stock SET quantity = quantity + %s
+                WHERE product_id = %s AND warehouse_id = %s
+            ''', (qty, pid, warehouse_id))
+        
+        # حركة المخزون
         db.execute('''
-            INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, created_by)
-            VALUES (%s, 'in', %s, 'agent_invoice', %s, %s)
-        ''', (item['product_id'], item['quantity'], agent_invoice_id, session['user_id']))
+            INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, warehouse_id, created_by)
+            VALUES (%s, 'in', %s, 'supplier_invoice', %s, %s, %s)
+        ''', (pid, qty, invoice_id, warehouse_id, session['user_id']))
     
-    # تحديث حالة فاتورة المورد
-    db.execute("UPDATE supplier_invoices SET status = 'received' WHERE id = %s", (agent_invoice['supplier_invoice_id'],))
-    
+    # تحديث حالة الفاتورة
+    db.execute("UPDATE supplier_invoices SET status = 'received' WHERE id = %s", (invoice_id,))
     db.commit()
     return jsonify({'success': True, 'message': 'تم استلام البضاعة وتحديث المخزون'})
 
@@ -4922,6 +6109,7 @@ def receive_invoice(agent_invoice_id):
 @role_required('manager', 'warehouse')
 def inventory():
     db = get_db()
+    warehouse_id = request.args.get('warehouse_id', type=int)
     
     products_list = db.execute('''
         SELECT p.*, c.name as category_name
@@ -4943,6 +6131,14 @@ def inventory():
             ORDER BY pu.conversion_factor
         ''', (p['id'],)).fetchall()
         product['units'] = [dict(u) for u in units]
+        
+        # مخزون مخزن محدد
+        if warehouse_id:
+            ws = db.execute('''
+                SELECT quantity FROM warehouse_stock WHERE product_id = %s AND warehouse_id = %s
+            ''', (p['id'], warehouse_id)).fetchone()
+            product['warehouse_qty'] = float(ws['quantity']) if ws else 0
+        
         products_with_units.append(product)
     
     # حساب الإحصائيات
@@ -4953,16 +6149,19 @@ def inventory():
         'zero_stock': sum(1 for p in products_with_units if p['current_stock'] == 0),
     }
     
-    return render_template('inventory.html', products=products_with_units, stats=stats)
+    warehouses_list = db.execute("SELECT id, name, type FROM warehouses WHERE is_active = TRUE ORDER BY name").fetchall()
+    return render_template('inventory.html', products=products_with_units, stats=stats,
+                         warehouses=warehouses_list, selected_warehouse_id=warehouse_id)
 
 @app.route('/api/inventory/movements/<int:product_id>')
 @role_required('manager', 'warehouse')
 def product_movements(product_id):
     db = get_db()
     movements = db.execute('''
-        SELECT im.*, u.display_name as created_by_name
+        SELECT im.*, u.display_name as created_by_name, w.name as warehouse_name
         FROM inventory_movements im
         LEFT JOIN users u ON u.id = im.created_by
+        LEFT JOIN warehouses w ON w.id = im.warehouse_id
         WHERE im.product_id = %s
         ORDER BY im.created_at DESC
         LIMIT 50

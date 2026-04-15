@@ -1,0 +1,248 @@
+{% extends 'base.html' %}
+
+{% block title %}التحويلات الداخلية - سوبر ماركت العباسي{% endblock %}
+{% block page_title %}التحويلات الداخلية{% endblock %}
+{% block page_subtitle %}تحويل البضاعة بين المخازن{% endblock %}
+
+{% block content %}
+<div x-data="transfersApp()" x-init="init()">
+
+    <!-- زر إنشاء تحويل -->
+    <div class="flex justify-end mb-4">
+        <button @click="showCreateModal = true" class="btn btn-primary">
+            <svg class="w-5 h-5 ml-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+            </svg>
+            تحويل جديد
+        </button>
+    </div>
+
+    <!-- جدول التحويلات -->
+    <div class="card overflow-hidden">
+        <table class="data-table w-full">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>من</th>
+                    <th>إلى</th>
+                    <th>الحالة</th>
+                    <th>بواسطة</th>
+                    <th>التاريخ</th>
+                    <th>إجراءات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in transfers %}
+                <tr>
+                    <td>{{ t.id }}</td>
+                    <td class="font-bold">{{ t.from_name }}</td>
+                    <td class="font-bold">{{ t.to_name }}</td>
+                    <td>
+                        {% if t.status == 'pending' %}
+                        <span class="badge badge-yellow">بانتظار الاستلام</span>
+                        {% elif t.status == 'completed' %}
+                        <span class="badge badge-green">مكتمل</span>
+                        {% elif t.status == 'cancelled' %}
+                        <span class="badge badge-red">ملغي</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ t.created_by_name or '-' }}</td>
+                    <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '-' }}</td>
+                    <td class="flex gap-2">
+                        <button @click="viewItems({{ t.id }})" class="text-indigo-600 hover:text-indigo-800 text-sm">عرض</button>
+                        {% if t.status == 'pending' %}
+                        <button @click="completeTransfer({{ t.id }})" class="text-green-600 hover:text-green-800 text-sm">استلام</button>
+                        <button @click="cancelTransfer({{ t.id }})" class="text-red-600 hover:text-red-800 text-sm">إلغاء</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not transfers %}
+                <tr>
+                    <td colspan="7" class="text-center text-gray-400 py-8">لا توجد تحويلات</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Modal إنشاء تحويل -->
+    <div x-show="showCreateModal" x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="showCreateModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-lg font-bold mb-4">تحويل جديد</h3>
+            
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">من مخزن *</label>
+                    <select x-model="newTransfer.from_warehouse_id" class="form-input w-full">
+                        <option value="">اختر المخزن</option>
+                        {% for w in warehouses %}
+                        <option value="{{ w.id }}">{{ w.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">إلى مخزن *</label>
+                    <select x-model="newTransfer.to_warehouse_id" class="form-input w-full">
+                        <option value="">اختر المخزن</option>
+                        {% for w in warehouses %}
+                        <option value="{{ w.id }}">{{ w.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">ملاحظات</label>
+                <textarea x-model="newTransfer.notes" class="form-input w-full" rows="2"></textarea>
+            </div>
+
+            <!-- بحث وإضافة أصناف -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">إضافة صنف</label>
+                <div class="flex gap-2">
+                    <input type="text" x-model="searchQuery" @input.debounce.300ms="searchProducts()" 
+                           class="form-input flex-1" placeholder="ابحث عن صنف...">
+                </div>
+                <!-- نتائج البحث -->
+                <div x-show="searchResults.length > 0" class="border dark:border-gray-600 rounded mt-1 max-h-40 overflow-y-auto">
+                    <template x-for="p in searchResults" :key="p.id">
+                        <div @click="addItem(p)" class="p-2 hover:bg-indigo-50 dark:hover:bg-gray-700 cursor-pointer border-b dark:border-gray-600 text-sm"
+                             x-text="p.name + ' (' + (p.unit || 'حبة') + ')'"></div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- بنود التحويل -->
+            <div x-show="newTransfer.items.length > 0" class="mb-4">
+                <table class="data-table w-full text-sm">
+                    <thead>
+                        <tr>
+                            <th>الصنف</th>
+                            <th class="w-24">الكمية</th>
+                            <th class="w-16"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="(item, idx) in newTransfer.items" :key="idx">
+                            <tr>
+                                <td x-text="item.product_name"></td>
+                                <td><input type="number" x-model="item.quantity" min="1" class="form-input w-full text-center"></td>
+                                <td><button @click="newTransfer.items.splice(idx, 1)" class="text-red-500 hover:text-red-700">✕</button></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <button @click="showCreateModal = false" class="btn">إلغاء</button>
+                <button @click="createTransfer()" class="btn btn-primary"
+                        :disabled="!newTransfer.from_warehouse_id || !newTransfer.to_warehouse_id || newTransfer.items.length === 0">
+                    إنشاء التحويل
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal عرض البنود -->
+    <div x-show="showItemsModal" x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="showItemsModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
+            <h3 class="text-lg font-bold mb-4">بنود التحويل</h3>
+            <table class="data-table w-full text-sm">
+                <thead><tr><th>الصنف</th><th>الكمية</th></tr></thead>
+                <tbody>
+                    <template x-for="item in viewingItems" :key="item.id">
+                        <tr>
+                            <td x-text="item.product_name"></td>
+                            <td x-text="item.quantity"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <div class="flex justify-end mt-4">
+                <button @click="showItemsModal = false" class="btn">إغلاق</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function transfersApp() {
+    return {
+        showCreateModal: false,
+        showItemsModal: false,
+        searchQuery: '',
+        searchResults: [],
+        viewingItems: [],
+        newTransfer: { from_warehouse_id: '', to_warehouse_id: '', notes: '', items: [] },
+
+        init() {},
+
+        async searchProducts() {
+            if (this.searchQuery.length < 2) { this.searchResults = []; return; }
+            const res = await fetch(`/api/products/search?q=${encodeURIComponent(this.searchQuery)}`);
+            this.searchResults = await res.json();
+        },
+
+        addItem(product) {
+            if (this.newTransfer.items.find(i => i.product_id === product.id)) return;
+            this.newTransfer.items.push({
+                product_id: product.id,
+                product_name: product.name,
+                quantity: 1
+            });
+            this.searchQuery = '';
+            this.searchResults = [];
+        },
+
+        async createTransfer() {
+            const res = await fetch('/api/internal-transfers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '{{ csrf_token() }}' },
+                body: JSON.stringify(this.newTransfer)
+            });
+            const data = await res.json();
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        },
+
+        async viewItems(transferId) {
+            const res = await fetch(`/api/internal-transfers/${transferId}/items`);
+            this.viewingItems = await res.json();
+            this.showItemsModal = true;
+        },
+
+        async completeTransfer(id) {
+            if (!confirm('هل تريد استلام هذا التحويل؟ سيتم تحديث المخزون.')) return;
+            const res = await fetch(`/api/internal-transfers/${id}/complete`, {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': '{{ csrf_token() }}' }
+            });
+            const data = await res.json();
+            if (data.success) location.reload();
+            else alert(data.message);
+        },
+
+        async cancelTransfer(id) {
+            if (!confirm('هل تريد إلغاء هذا التحويل؟')) return;
+            const res = await fetch(`/api/internal-transfers/${id}/cancel`, {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': '{{ csrf_token() }}' }
+            });
+            const data = await res.json();
+            if (data.success) location.reload();
+            else alert(data.message);
+        }
+    };
+}
+</script>
+{% endblock %}
+
