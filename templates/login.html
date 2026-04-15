@@ -248,6 +248,7 @@
         <!-- Login Form -->
         <form method="POST" id="loginForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
             
             <div class="form-group">
                 <label class="form-label">رقم المستخدم</label>

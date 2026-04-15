@@ -780,7 +780,7 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             flash('يرجى تسجيل الدخول أولاً', 'warning')
-            return redirect(url_for('login'))
+            return redirect(url_for('login', next=request.path))
         if session.get('must_change_password'):
             return redirect(url_for('force_change_password'))
         return f(*args, **kwargs)
@@ -788,15 +788,22 @@ def login_required(f):
 
 def get_user_permissions(user_id):
     """جلب صلاحيات المستخدم"""
-    db = get_db()
-    perms = db.execute('SELECT module_code, can_view, can_add, can_edit, can_delete FROM user_permissions WHERE user_id = %s', (user_id,)).fetchall()
-    result = {}
-    for p in perms:
-        result[p['module_code']] = {
-            'view': p['can_view'], 'add': p['can_add'],
-            'edit': p['can_edit'], 'delete': p['can_delete']
-        }
-    return result
+    try:
+        db = get_db()
+        try:
+            db.rollback()
+        except:
+            pass
+        perms = db.execute('SELECT module_code, can_view, can_add, can_edit, can_delete FROM user_permissions WHERE user_id = %s', (user_id,)).fetchall()
+        result = {}
+        for p in perms:
+            result[p['module_code']] = {
+                'view': p['can_view'], 'add': p['can_add'],
+                'edit': p['can_edit'], 'delete': p['can_delete']
+            }
+        return result
+    except:
+        return {}
 
 def permission_required(module_code, action='view'):
     """التحقق من صلاحية المستخدم لصفحة/إجراء معين"""
@@ -945,7 +952,12 @@ def login():
                 return redirect(url_for('force_change_password'))
             
             flash(f'مرحباً {user["display_name"]}', 'success')
-            return redirect(url_for('dashboard'))
+            # إرجاع المستخدم للصفحة التي كان فيها
+            next_page = request.form.get('next') or request.args.get('next') or url_for('dashboard')
+            # التأكد أن الصفحة آمنة (لا تبدأ بـ http)
+            if not next_page.startswith('/'):
+                next_page = url_for('dashboard')
+            return redirect(next_page)
         else:
             flash('اسم المستخدم أو كلمة المرور غير صحيحة', 'error')
     
@@ -1128,17 +1140,22 @@ def dashboard():
 @role_required('manager')
 def suppliers():
     db = get_db()
-    suppliers_list = db.execute('''
-        SELECT s.*, 
-               COUNT(DISTINCT sp.id) as products_count,
-               COUNT(DISTINCT si.id) as invoices_count
-        FROM suppliers s
-        LEFT JOIN supplier_products sp ON sp.supplier_id = s.id
-        LEFT JOIN supplier_invoices si ON si.supplier_id = s.id
-        WHERE s.is_active = TRUE
-        GROUP BY s.id
-        ORDER BY s.name
-    ''').fetchall()
+    try:
+        suppliers_list = db.execute('''
+            SELECT s.*, 
+                   COUNT(DISTINCT sp.id) as products_count,
+                   COUNT(DISTINCT si.id) as invoices_count
+            FROM suppliers s
+            LEFT JOIN supplier_products sp ON sp.supplier_id = s.id
+            LEFT JOIN supplier_invoices si ON si.supplier_id = s.id
+            WHERE s.is_active = TRUE
+            GROUP BY s.id
+            ORDER BY s.name
+        ''').fetchall()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return f"Error: {e}", 500
     return render_template('suppliers.html', suppliers=suppliers_list)
 
 @app.route('/maps')
@@ -1184,24 +1201,31 @@ def api_suppliers():
     
     if request.method == 'POST':
         data = request.json
-        cursor = db.execute('''
-            INSERT INTO suppliers (name, phone, address, notes, latitude, longitude)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (data['name'], data.get('phone'), data.get('address'), data.get('notes'),
-              data.get('latitude'), data.get('longitude')))
-        supplier_id = cursor.lastrowid
-        # حفظ الأرقام الإضافية
-        for ph in data.get('phones', []):
-            if ph.get('phone'):
-                db.execute('INSERT INTO supplier_phones (supplier_id, phone, label, is_primary) VALUES (%s,%s,%s,%s)',
-                           (supplier_id, ph['phone'], ph.get('label','جوال'), ph.get('is_primary',0)))
-        # حفظ الحسابات
-        for acc in data.get('accounts', []):
-            if acc.get('account_name'):
-                db.execute('INSERT INTO supplier_accounts (supplier_id, account_name, account_number, notes) VALUES (%s,%s,%s,%s)',
-                           (supplier_id, acc['account_name'], acc.get('account_number'), acc.get('notes')))
-        db.commit()
-        return jsonify({'success': True, 'id': supplier_id, 'message': 'تم إضافة المورد'})
+        try:
+            row = db.execute('''
+                INSERT INTO suppliers (name, phone, address, notes, latitude, longitude)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (data['name'], data.get('phone'), data.get('address'), data.get('notes'),
+                  data.get('latitude'), data.get('longitude'))).fetchone()
+            supplier_id = row['id']
+            # حفظ الأرقام الإضافية
+            for ph in data.get('phones', []):
+                if ph.get('phone'):
+                    db.execute('INSERT INTO supplier_phones (supplier_id, phone, label, is_primary) VALUES (%s,%s,%s,%s)',
+                               (supplier_id, ph['phone'], ph.get('label','جوال'), ph.get('is_primary',0)))
+            # حفظ الحسابات
+            for acc in data.get('accounts', []):
+                if acc.get('account_name'):
+                    db.execute('INSERT INTO supplier_accounts (supplier_id, account_name, account_number, notes) VALUES (%s,%s,%s,%s)',
+                               (supplier_id, acc['account_name'], acc.get('account_number'), acc.get('notes')))
+            db.commit()
+            return jsonify({'success': True, 'id': supplier_id, 'message': 'تم إضافة المورد'})
+        except Exception as e:
+            db.rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({'success': False, 'message': str(e)}), 500
     
     suppliers_list = db.execute('SELECT * FROM suppliers WHERE is_active=TRUE ORDER BY name').fetchall()
     return jsonify([dict(s) for s in suppliers_list])
@@ -2442,6 +2466,61 @@ def api_request_action(req_id, action):
     messages = {'approve': 'تم اعتماد الطلب', 'reject': 'تم رفض الطلب', 'done': 'تم إنجاز الطلب'}
     return jsonify({'success': True, 'message': messages[action]})
 
+@app.route('/api/ping')
+def api_ping():
+    return jsonify({'ok': True, 'time': datetime.now().isoformat()})
+
+@app.route('/api/events')
+@login_required
+def api_events():
+    """SSE - Server-Sent Events للتحديث الفوري"""
+    import time
+    def generate():
+        last_stocktake_count = 0
+        last_request_count = 0
+        last_chat_count = 0
+        
+        while True:
+            try:
+                db = get_db()
+                
+                # عدد عناصر الجرد
+                st = db.execute('SELECT COUNT(*) as c FROM stocktake_items').fetchone()['c']
+                # عدد الطلبات
+                req = db.execute("SELECT COUNT(*) as c FROM stocktake_product_requests WHERE status='pending'").fetchone()['c']
+                # رسائل الدردشة الجديدة
+                chat = db.execute('SELECT COUNT(*) as c FROM chat_messages WHERE receiver_id = %s AND is_read = FALSE', (session['user_id'],)).fetchone()['c']
+                
+                data = {
+                    'stocktake_items': st,
+                    'pending_requests': req,
+                    'unread_chat': chat,
+                    'time': datetime.now().strftime('%H:%M:%S')
+                }
+                
+                changed = (st != last_stocktake_count or req != last_request_count or chat != last_chat_count)
+                
+                if changed or True:  # أرسل دائماً كل 30 ثانية
+                    last_stocktake_count = st
+                    last_request_count = req
+                    last_chat_count = chat
+                    yield f"data: {json.dumps(data)}\n\n"
+                
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            
+            time.sleep(30)
+    
+    response = app.response_class(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+    return response
+
 @app.route('/ca.pem')
 def download_ca():
     ca_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ca.pem')
@@ -2607,11 +2686,13 @@ def stocktake_page():
     categories = db.execute('SELECT * FROM categories ORDER BY name').fetchall()
     units = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
 
+    # أي جلسة مفتوحة (الجرد مشترك بين الكل)
     open_session = db.execute('''
-        SELECT * FROM stocktake_sessions
-        WHERE created_by = %s AND status = 'open'
-        ORDER BY id DESC LIMIT 1
-    ''', (session['user_id'],)).fetchone()
+        SELECT s.*, u.display_name as creator_name FROM stocktake_sessions s
+        LEFT JOIN users u ON u.id = s.created_by
+        WHERE s.status = 'open'
+        ORDER BY s.id DESC LIMIT 1
+    ''').fetchone()
 
     recent_items = []
     recent_requests = []
@@ -2631,19 +2712,52 @@ def stocktake_page():
 
     return render_template('stocktake.html', categories=categories, units=units, open_session=open_session, recent_items=recent_items, recent_requests=recent_requests)
 
+@app.route('/api/stocktake/recent')
+@login_required
+def api_stocktake_recent():
+    db = get_db()
+    session_id = request.args.get('session_id', type=int)
+    if not session_id:
+        return jsonify({'items': []})
+    items = db.execute('''
+        SELECT product_name, barcode, selected_unit, counted_stock
+        FROM stocktake_items WHERE session_id = %s
+        ORDER BY id DESC LIMIT 20
+    ''', (session_id,)).fetchall()
+    return jsonify({'items': [dict(i) for i in items]})
+
+@app.route('/api/stocktake/recent-requests')
+@login_required
+def api_stocktake_recent_requests():
+    db = get_db()
+    session_id = request.args.get('session_id', type=int)
+    if not session_id:
+        return jsonify({'requests': []})
+    requests = db.execute('''
+        SELECT product_name, barcode, quantity_counted
+        FROM stocktake_product_requests WHERE session_id = %s
+        ORDER BY id DESC LIMIT 20
+    ''', (session_id,)).fetchall()
+    return jsonify({'requests': [dict(r) for r in requests]})
+
 @app.route('/api/stocktake/session', methods=['POST'])
 @login_required
 def api_create_stocktake_session():
     db = get_db()
+    
+    # فقط مدير النظام (المستخدم 1) يقدر يفتح جلسة جرد
+    if session['user_id'] != 1:
+        return jsonify({'success': False, 'message': 'فقط مدير النظام يستطيع فتح جلسة جرد'}), 403
+    
     data = request.get_json() or {}
     title = (data.get('title') or '').strip() or f"جرد {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     notes = (data.get('notes') or '').strip()
 
     existing = db.execute('''
         SELECT * FROM stocktake_sessions
-        WHERE created_by = %s AND status = 'open'
+        WHERE status = 'open'
         ORDER BY id DESC LIMIT 1
-    ''', (session['user_id'],)).fetchone()
+    ''').fetchone()
     if existing:
         return jsonify({'success': True, 'session_id': existing['id'], 'session': dict(existing), 'message': 'توجد جلسة جرد مفتوحة بالفعل'})
 
@@ -2659,24 +2773,30 @@ def api_create_stocktake_session():
 @login_required
 def api_current_stocktake_session():
     db = get_db()
+    # الجلسة مشتركة — أي جلسة مفتوحة
     open_session = db.execute('''
         SELECT * FROM stocktake_sessions
-        WHERE created_by = %s AND status = 'open'
+        WHERE status = 'open'
         ORDER BY id DESC LIMIT 1
-    ''', (session['user_id'],)).fetchone()
+    ''').fetchone()
     return jsonify({'success': True, 'session': dict(open_session) if open_session else None})
 
 @app.route('/api/stocktake/session/close', methods=['POST'])
 @login_required
 def api_close_stocktake_session():
     db = get_db()
+    
+    # فقط مدير النظام يقدر يقفل الجلسة
+    if session['user_id'] != 1:
+        return jsonify({'success': False, 'message': 'فقط مدير النظام يستطيع إغلاق جلسة الجرد'}), 403
+    
     data = request.get_json() or {}
     session_id = data.get('session_id')
     
     if not session_id:
         return jsonify({'success': False, 'message': 'رقم الجلسة مطلوب'}), 400
     
-    stocktake_session = db.execute('SELECT * FROM stocktake_sessions WHERE id = %s AND created_by = %s', (session_id, session['user_id'])).fetchone()
+    stocktake_session = db.execute('SELECT * FROM stocktake_sessions WHERE id = %s', (session_id,)).fetchone()
     if not stocktake_session:
         return jsonify({'success': False, 'message': 'جلسة الجرد غير موجودة'}), 404
     
@@ -2747,6 +2867,40 @@ def stocktake_requests_page():
         'rejected': db.execute("SELECT COUNT(*) as c FROM stocktake_product_requests WHERE status='rejected'").fetchone()['c'],
     }
     units = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
+    
+    # تحديد الطلبات المكررة مع أرقامها
+    all_pending = db.execute('''
+        SELECT id, barcode FROM stocktake_product_requests
+        WHERE barcode IS NOT NULL AND barcode != '' AND status = 'pending'
+        ORDER BY id
+    ''').fetchall()
+    
+    # بناء خريطة: باركود → قائمة الـ IDs
+    from collections import defaultdict
+    barcode_ids_map = defaultdict(list)
+    for r in all_pending:
+        barcode_ids_map[r['barcode']].append(r['id'])
+    
+    duplicate_barcodes = {bc: ids for bc, ids in barcode_ids_map.items() if len(ids) > 1}
+    
+    # إضافة معلومات المكرر لكل طلب
+    requests_with_dup = []
+    for r in requests_list:
+        rd = dict(r)
+        bc = rd.get('barcode')
+        if bc and bc in duplicate_barcodes:
+            rd['is_duplicate'] = True
+            # الطلبات الأخرى لنفس الباركود
+            other_ids = [i for i in duplicate_barcodes[bc] if i != rd['id']]
+            rd['duplicate_with'] = other_ids
+        else:
+            rd['is_duplicate'] = False
+            rd['duplicate_with'] = []
+        requests_with_dup.append(rd)
+    requests_list = requests_with_dup
+    
+    # عدد المكررات
+    counts['duplicates'] = len(duplicate_barcodes)
     
     # طلبات تعديل الأصناف
     edit_requests_raw = db.execute('''
@@ -2956,13 +3110,24 @@ def stocktake_session_detail(session_id):
     ''').fetchall()
     items = [i for i in items if i['session_id'] == session_id]
     
-    requests = db.execute('''
+    requests_raw = db.execute('''
         SELECT r.*, c.name as category_name
         FROM stocktake_product_requests r
         LEFT JOIN categories c ON c.id = r.category_id
         WHERE r.session_id = %s
         ORDER BY r.id DESC
     ''', (session_id,)).fetchall()
+    
+    # تحديد المكررات
+    from collections import Counter
+    barcode_counts = Counter(r['barcode'] for r in requests_raw if r['barcode'])
+    dup_barcodes = {bc for bc, cnt in barcode_counts.items() if cnt > 1}
+    
+    requests = []
+    for r in requests_raw:
+        rd = dict(r)
+        rd['is_duplicate'] = rd.get('barcode') in dup_barcodes
+        requests.append(rd)
     
     return render_template('stocktake_session_detail.html', stocktake_session=stocktake_session, items=items, requests=requests)
 
@@ -3012,7 +3177,7 @@ def stocktake_export_excel(session_id):
     ws_items.title = 'الأصناف المسجلة'
     ws_items.sheet_view.rightToLeft = True
     
-    items_headers = ['#', 'اسم الصنف', 'الباركود', 'القسم', 'الوحدة', 'العبوة', 'الكمية', 'الباتش', 'تاريخ الإنتاج', 'تاريخ الانتهاء', 'ملاحظة']
+    items_headers = ['#', 'اسم الصنف', 'الباركود', 'القسم', 'الوحدة', 'العبوة', 'الكمية', 'الباتش', 'تاريخ الإنتاج', 'تاريخ الانتهاء', 'المدة المتبقية (يوم)', 'ملاحظة']
     for col, header in enumerate(items_headers, 1):
         cell = ws_items.cell(row=1, column=col, value=header)
         cell.font = header_font
@@ -3020,7 +3185,11 @@ def stocktake_export_excel(session_id):
         cell.alignment = header_align
         cell.border = thin_border
     
+    today_date = datetime.now().date()
     for row_idx, item in enumerate(items, 2):
+        days_left = None
+        if item['expiry_date']:
+            days_left = (item['expiry_date'] - today_date).days
         row_data = [
             row_idx - 1,
             item['product_name'] or item['product_name_db'] or '',
@@ -3032,6 +3201,7 @@ def stocktake_export_excel(session_id):
             item['batch_no'] or '',
             item['production_date'].strftime('%Y-%m-%d') if item['production_date'] else '',
             item['expiry_date'].strftime('%Y-%m-%d') if item['expiry_date'] else '',
+            days_left if days_left is not None else '',
             item['notes'] or ''
         ]
         for col, value in enumerate(row_data, 1):
@@ -3050,14 +3220,26 @@ def stocktake_export_excel(session_id):
     ws_items.column_dimensions['H'].width = 15
     ws_items.column_dimensions['I'].width = 14
     ws_items.column_dimensions['J'].width = 14
-    ws_items.column_dimensions['K'].width = 30
+    ws_items.column_dimensions['K'].width = 16
+    ws_items.column_dimensions['L'].width = 30
+    
+    # تلوين خلايا المدة المتبقية
+    for row_idx, item in enumerate(items, 2):
+        cell = ws_items.cell(row=row_idx, column=11)
+        if isinstance(cell.value, int):
+            if cell.value < 0:
+                cell.fill = PatternFill(start_color='FEE2E2', end_color='FEE2E2', fill_type='solid')
+            elif cell.value <= 30:
+                cell.fill = PatternFill(start_color='FECACA', end_color='FECACA', fill_type='solid')
+            elif cell.value <= 90:
+                cell.fill = PatternFill(start_color='FEF3C7', end_color='FEF3C7', fill_type='solid')
     
     # ورقة الطلبات غير الموجودة
     if requests_list:
         ws_requests = wb.create_sheet('طلبات غير موجود')
         ws_requests.sheet_view.rightToLeft = True
         
-        req_headers = ['#', 'الباركود', 'اسم الصنف', 'القسم', 'الوحدة', 'الكمية', 'الحالة', 'ملاحظة']
+        req_headers = ['#', 'الباركود', 'اسم الصنف', 'القسم', 'الوحدة', 'العبوة', 'الكمية', 'تاريخ الإنتاج', 'تاريخ الانتهاء', 'المدة المتبقية (يوم)', 'الباتش', 'سعر التكلفة', 'سعر البيع', 'الحالة', 'ملاحظة']
         for col, header in enumerate(req_headers, 1):
             cell = ws_requests.cell(row=1, column=col, value=header)
             cell.font = header_font
@@ -3065,30 +3247,47 @@ def stocktake_export_excel(session_id):
             cell.alignment = header_align
             cell.border = thin_border
         
+        today = datetime.now().date()
         for row_idx, req in enumerate(requests_list, 2):
+            # حساب المدة المتبقية
+            days_left = None
+            if req['expiry_date']:
+                days_left = (req['expiry_date'] - today).days
+            
+            status_labels = {'pending': 'قيد المراجعة', 'approved': 'معتمد', 'rejected': 'مرفوض'}
             row_data = [
                 row_idx - 1,
                 req['barcode'] or '',
                 req['product_name'] or '',
                 req['category_name'] or '',
                 req['unit'] or '',
+                req['pack_size'] or 1,
                 float(req['quantity_counted'] or 1),
-                req['status'] or 'pending',
+                req['production_date'].strftime('%Y-%m-%d') if req['production_date'] else '',
+                req['expiry_date'].strftime('%Y-%m-%d') if req['expiry_date'] else '',
+                days_left if days_left is not None else '',
+                req['batch_no'] or '',
+                float(req['cost_price']) if req['cost_price'] else '',
+                float(req['sell_price']) if req['sell_price'] else '',
+                status_labels.get(req['status'] or 'pending', req['status'] or ''),
                 req['notes'] or ''
             ]
             for col, value in enumerate(row_data, 1):
                 cell = ws_requests.cell(row=row_idx, column=col, value=value)
                 cell.alignment = cell_align
                 cell.border = thin_border
+                # تلوين خلية المدة المتبقية
+                if col == 10 and isinstance(value, int):
+                    if value < 0:
+                        cell.fill = PatternFill(start_color='FEE2E2', end_color='FEE2E2', fill_type='solid')
+                    elif value <= 30:
+                        cell.fill = PatternFill(start_color='FECACA', end_color='FECACA', fill_type='solid')
+                    elif value <= 90:
+                        cell.fill = PatternFill(start_color='FEF3C7', end_color='FEF3C7', fill_type='solid')
         
-        ws_requests.column_dimensions['A'].width = 5
-        ws_requests.column_dimensions['B'].width = 18
-        ws_requests.column_dimensions['C'].width = 40
-        ws_requests.column_dimensions['D'].width = 20
-        ws_requests.column_dimensions['E'].width = 12
-        ws_requests.column_dimensions['F'].width = 10
-        ws_requests.column_dimensions['G'].width = 12
-        ws_requests.column_dimensions['H'].width = 30
+        col_widths = {'A':5,'B':18,'C':40,'D':20,'E':12,'F':8,'G':10,'H':14,'I':14,'J':16,'K':15,'L':12,'M':12,'N':14,'O':30}
+        for col_letter, width in col_widths.items():
+            ws_requests.column_dimensions[col_letter].width = width
     
     # حفظ في buffer
     output = BytesIO()
@@ -3899,6 +4098,36 @@ def api_supplier_products():
     db = get_db()
     data = request.json
     
+    # دعم الإضافة السريعة من نافذة الفاتورة
+    if data.get('quick_add'):
+        supplier_id = data.get('supplier_id')
+        product_id = data.get('product_id')
+        supplier_product_name = data.get('supplier_product_name', '').strip()
+        pack_size = data.get('pack_size', 1)
+        
+        if not supplier_id or not product_id or not supplier_product_name:
+            return jsonify({'success': False, 'message': 'بيانات ناقصة'})
+        
+        row = db.execute('''
+            INSERT INTO supplier_products (supplier_id, product_id, supplier_product_name, pack_size)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        ''', (supplier_id, product_id, supplier_product_name, pack_size)).fetchone()
+        db.commit()
+        
+        new_id = row['id']
+        
+        # إرجاع البيانات الكاملة
+        new_item = db.execute('''
+            SELECT sp.*, p.name as product_name
+            FROM supplier_products sp
+            JOIN products p ON p.id = sp.product_id
+            WHERE sp.id = %s
+        ''', (new_id,)).fetchone()
+        
+        return jsonify({'success': True, 'id': new_id, 'product': dict(new_item)})
+    
+    # الطريقة القديمة
     allowed_products = data.get('allowed_products', [])
     primary_product_id = allowed_products[0] if allowed_products else None
     
@@ -4309,17 +4538,18 @@ def new_supplier_invoice():
             return jsonify({'success': False, 'message': 'المورد غير موجود أو غير نشط'})
         
         # إنشاء رقم فاتورة تلقائي
-        last = db.execute('SELECT MAX(id) FROM supplier_invoices').fetchone()['count'] or 0
+        last = db.execute('SELECT MAX(id) as max_id FROM supplier_invoices').fetchone()['max_id'] or 0
         invoice_number = f"SI-{datetime.now().strftime('%Y%m')}-{last+1:04d}"
         
-        cursor = db.execute('''
+        row = db.execute('''
             INSERT INTO supplier_invoices (invoice_number, supplier_id, invoice_date, total_amount, notes, created_by)
             VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
         ''', (
             invoice_number, supplier_id, data['invoice_date'],
             total_amount, data.get('notes'), session['user_id']
-        ))
-        invoice_id = cursor.lastrowid
+        )).fetchone()
+        invoice_id = row['id']
         
         # إضافة البنود
         for item in items:

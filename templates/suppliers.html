@@ -472,14 +472,21 @@ async function saveSupplier(e) {
     try {
         const response = await fetch(url, {
             method: method,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
             body: JSON.stringify(data)
         });
         
         const result = await response.json();
         if (result.success) {
             showSuccess(id ? 'تم تحديث المورد بنجاح' : 'تم إضافة المورد بنجاح');
-            setTimeout(() => location.reload(), 800);
+            // إذا جاء من صفحة الفاتورة، ارجع إليها مع المورد الجديد
+            if (sessionStorage.getItem('returnToInvoice') === 'true' && !id) {
+                sessionStorage.removeItem('returnToInvoice');
+                sessionStorage.setItem('newSupplierId', result.id);
+                setTimeout(() => window.location.href = '/supplier-invoices/new', 800);
+            } else {
+                setTimeout(() => location.reload(), 800);
+            }
         } else {
             showError(result.message || 'حدث خطأ');
         }
@@ -504,6 +511,14 @@ async function deleteSupplier(id, name) {
         showError('تعذّر الاتصال بالخادم');
     }
 }
+
+// فتح نافذة الإضافة تلقائياً إذا جاء من صفحة الفاتورة
+document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('add') === '1') {
+        setTimeout(() => openAddModal(), 200);
+    }
+});
 </script>
 {% endblock %}
 

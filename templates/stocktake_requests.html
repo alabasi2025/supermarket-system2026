@@ -22,6 +22,11 @@
             <a href="/stocktake/requests?status=rejected" class="px-4 py-2 rounded-xl font-bold text-sm transition-colors {{ 'bg-red-500 text-white' if status_filter=='rejected' else 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400' }}">
                 ❌ مرفوض <span class="px-1.5 py-0.5 rounded-full text-[10px] {{ 'bg-white/20' if status_filter=='rejected' else 'bg-red-100 text-red-700' }}">{{ counts.rejected }}</span>
             </a>
+            {% if counts.duplicates > 0 %}
+            <a href="/stocktake/requests?status=pending&dup=1" class="px-4 py-2 rounded-xl font-bold text-sm transition-colors bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400 border border-orange-300">
+                🔁 مكررة <span class="px-1.5 py-0.5 rounded-full text-[10px] bg-orange-200 text-orange-800">{{ counts.duplicates }}</span>
+            </a>
+            {% endif %}
         </div>
     </div>
 
@@ -33,6 +38,11 @@
             <div class="flex-1 space-y-3">
                 <div class="flex items-center gap-3 flex-wrap">
                     <span class="text-2xl font-mono font-bold text-gray-800 dark:text-gray-100">{{ req.barcode }}</span>
+                    {% if req.is_duplicate %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-300">
+                        🔁 مكرر مع: {% for dup_id in req.duplicate_with %}<a href="#request-{{ dup_id }}" onclick="document.getElementById('request-{{ dup_id }}').style.outline='3px solid orange'; setTimeout(()=>document.getElementById('request-{{ dup_id }}').style.outline='',2000);" class="underline font-bold hover:text-orange-900">#{{ dup_id }}</a>{% if not loop.last %}، {% endif %}{% endfor %}
+                    </span>
+                    {% endif %}
                     {% if req.status == 'pending' %}
                     <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">⏳ قيد المراجعة</span>
                     {% elif req.status == 'approved' %}
@@ -68,6 +78,16 @@
                         <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.sell_price or '-' }}</p>
                     </div>
                     <div>
+                        <span class="text-gray-400 text-xs">تاريخ الإنتاج</span>
+                        <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.production_date.strftime('%Y-%m-%d') if req.production_date else '-' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-xs">تاريخ الانتهاء</span>
+                        <p class="font-bold {% if req.expiry_date and req.expiry_date.strftime('%Y-%m-%d') < '2026-06-01' %}text-red-600 dark:text-red-400{% else %}text-gray-800 dark:text-gray-100{% endif %}">
+                            {{ req.expiry_date.strftime('%Y-%m-%d') if req.expiry_date else '-' }}
+                        </p>
+                    </div>
+                    <div>
                         <span class="text-gray-400 text-xs">الباتش</span>
                         <p class="font-bold text-gray-800 dark:text-gray-100">{{ req.batch_no or '-' }}</p>
                     </div>
@@ -92,6 +112,11 @@
             <!-- Actions -->
             {% if req.status == 'pending' %}
             <div class="flex flex-col gap-2 shrink-0">
+                {% if req.is_duplicate %}
+                <button onclick="deleteReq({{ req.id }})" class="px-5 py-2.5 rounded-xl bg-orange-100 text-orange-700 font-bold text-sm hover:bg-orange-200 transition-colors">
+                    🗑️ حذف المكرر
+                </button>
+                {% endif %}
                 <button onclick="showEditModal({{ req.id }}, {
                     barcode: '{{ req.barcode or '' }}',
                     product_name: '{{ (req.product_name or '')|replace("'", "\\'") }}',
@@ -334,6 +359,15 @@
 
 <script>
 function csrfH() { return {'X-CSRF-Token': document.getElementById('csrfToken').value, 'Content-Type': 'application/json'}; }
+
+async function deleteReq(id) {
+    if (!confirm('حذف هذا الطلب المكرر؟')) return;
+    const r = await fetch(`/api/stocktake/request/${id}/reject`, {method:'POST', headers: csrfH()});
+    const d = await r.json();
+    if (d.success) {
+        document.getElementById ? location.reload() : location.reload();
+    }
+}
 
 async function markEditDone(id) {
     if (!confirm('تأكيد أن التعديل تم؟')) return;

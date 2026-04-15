@@ -14,12 +14,13 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">المورد *</label>
-                <select x-model="supplierId" @change="loadSupplierProducts()" required
+                <select x-model="supplierId" x-ref="supplierSelect" @change="handleSupplierChange()" required
                         class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                     <option value="">-- اختر المورد --</option>
                     {% for supplier in suppliers %}
                     <option value="{{ supplier.id }}">{{ supplier.name }}</option>
                     {% endfor %}
+
                 </select>
             </div>
             <div>
@@ -69,13 +70,19 @@
                         <tr class="hover:bg-gray-50">
                             <td class="px-4 py-3 text-sm text-gray-500" x-text="index + 1"></td>
                             <td class="px-4 py-3">
-                                <select x-model="item.supplier_product_id" @change="updateItemInfo(index)"
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
-                                    <option value="">-- اختر الصنف --</option>
-                                    <template x-for="product in supplierProducts" :key="product.id">
-                                        <option :value="product.id" x-text="product.supplier_product_name + ' ← ' + product.product_name"></option>
-                                    </template>
-                                </select>
+                                <div class="flex gap-2">
+                                    <select x-model="item.supplier_product_id" @change="updateItemInfo(index)"
+                                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                        <option value="">-- اختر الصنف --</option>
+                                        <template x-for="product in supplierProducts" :key="product.id">
+                                            <option :value="product.id" x-text="product.supplier_product_name + ' ← ' + product.product_name"></option>
+                                        </template>
+                                    </select>
+                                    <button @click="showAddProductModal(index)" type="button"
+                                            class="shrink-0 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                        ➕
+                                    </button>
+                                </div>
                             </td>
                             <td class="px-4 py-3 text-center">
                                 <span class="inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium bg-blue-100 text-blue-800" 
@@ -132,6 +139,129 @@
             إلغاء
         </a>
     </div>
+    
+    <!-- Modal: Add New Supplier -->
+    <div x-show="showSupplierModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="showSupplierModal = false">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4" @click.stop>
+            <h3 class="text-xl font-bold text-gray-800 border-b pb-3">إضافة مورد جديد</h3>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">اسم المورد *</label>
+                <input type="text" x-model="newSupplierName" class="w-full px-4 py-2 border border-gray-300 rounded-xl" placeholder="مثال: شركة النور">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف</label>
+                <input type="text" x-model="newSupplierPhone" class="w-full px-4 py-2 border border-gray-300 rounded-xl" placeholder="777123456">
+            </div>
+            <div class="flex gap-3 pt-3 border-t">
+                <button @click="saveNewSupplier()" :disabled="!newSupplierName.trim()" class="flex-1 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 font-bold">حفظ</button>
+                <button @click="showSupplierModal = false" class="py-2 px-6 bg-gray-200 text-gray-700 rounded-xl">إلغاء</button>
+            </div>
+            <p class="text-xs text-gray-500">لإضافة تفاصيل أكثر (عنوان، حسابات) اذهب لصفحة <a href="/suppliers" class="text-indigo-600 underline">الموردين</a></p>
+        </div>
+    </div>
+    
+    <!-- Modal: Add New Supplier Product -->
+<div x-show="showModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+     @click.self="showModal = false">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-4" @click.stop>
+        <div class="flex items-center justify-between border-b border-gray-200 pb-4">
+            <h3 class="text-xl font-bold text-gray-800">إضافة صنف جديد للمورد</h3>
+            <button @click="showModal = false" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">اسم الصنف عند المورد *</label>
+                <input type="text" x-model="newProduct.supplier_product_name" 
+                       class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                       placeholder="مثال: حليب نيدو 400جم">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">حجم العبوة</label>
+                <input type="number" x-model.number="newProduct.pack_size" min="1" step="1"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                       placeholder="1">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">ربط بصنف النظام *</label>
+                <div class="flex gap-2">
+                    <input type="text" x-model="productSearchQuery" @input="searchProducts()" 
+                           placeholder="ابحث عن صنف..."
+                           class="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+                    <button type="button" @click="showAddNewProductForm = !showAddNewProductForm"
+                            class="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors">
+                        + صنف جديد
+                    </button>
+                </div>
+                
+                <!-- Search Results -->
+                <div x-show="productSearchResults.length > 0" class="mt-2 border border-gray-200 rounded-xl max-h-48 overflow-y-auto">
+                    <template x-for="p in productSearchResults" :key="p.id">
+                        <button type="button" @click="selectProduct(p)" 
+                                class="w-full px-4 py-2 text-right hover:bg-indigo-50 transition-colors border-b border-gray-100 last:border-0">
+                            <div class="font-medium text-gray-800" x-text="p.name"></div>
+                            <div class="text-xs text-gray-500" x-text="p.barcode || 'بدون باركود'"></div>
+                        </button>
+                    </template>
+                </div>
+                
+                <!-- Selected Product -->
+                <div x-show="newProduct.product_id" class="mt-2 p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="font-medium text-indigo-900" x-text="newProduct.product_name"></div>
+                            <div class="text-xs text-indigo-600" x-text="newProduct.product_barcode"></div>
+                        </div>
+                        <button type="button" @click="newProduct.product_id = null; newProduct.product_name = ''; newProduct.product_barcode = ''"
+                                class="text-red-500 hover:text-red-700">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Quick Add New Product Form -->
+                <div x-show="showAddNewProductForm" class="mt-2 p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
+                    <h4 class="font-bold text-sm text-gray-700">إضافة صنف جديد للنظام</h4>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">اسم الصنف</label>
+                            <input type="text" x-model="quickNewProduct.name" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">الباركود</label>
+                            <input type="text" x-model="quickNewProduct.barcode" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                    </div>
+                    <button type="button" @click="createQuickProduct()" 
+                            class="w-full py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700">
+                        حفظ الصنف واستخدامه
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex gap-3 pt-4 border-t border-gray-200">
+            <button @click="saveNewSupplierProduct()" 
+                    :disabled="!newProduct.supplier_product_name || !newProduct.product_id"
+                    class="flex-1 py-3 px-6 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                حفظ وإضافة للفاتورة
+            </button>
+            <button @click="showModal = false" 
+                    class="py-3 px-6 bg-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-300 transition-colors">
+                إلغاء
+            </button>
+        </div>
+    </div>
+</div>
+
 </div>
 
 <script>
@@ -143,8 +273,181 @@ function invoiceForm() {
         items: [],
         supplierProducts: [],
         
+        // Modal
+        showModal: false,
+        currentItemIndex: null,
+        newProduct: {
+            supplier_product_name: '',
+            pack_size: 1,
+            product_id: null,
+            product_name: '',
+            product_barcode: ''
+        },
+        productSearchQuery: '',
+        productSearchResults: [],
+        showAddNewProductForm: false,
+        quickNewProduct: {
+            name: '',
+            barcode: ''
+        },
+        
         get totalAmount() {
             return this.items.reduce((sum, item) => sum + (item.total_price || 0), 0);
+        },
+        
+        init() {
+            // إذا رجع من صفحة الموردين بعد إضافة مورد جديد
+            const newSupplierId = sessionStorage.getItem('newSupplierId');
+            if (newSupplierId) {
+                sessionStorage.removeItem('newSupplierId');
+                this.supplierId = newSupplierId;
+                this.loadSupplierProducts();
+            }
+        },
+        
+        // Supplier Modal
+        showSupplierModal: false,
+        newSupplierName: '',
+        newSupplierPhone: '',
+        
+        handleSupplierChange() {
+            if (this.supplierId === '__new__') {
+                this.supplierId = '';
+                this.newSupplierName = '';
+                this.newSupplierPhone = '';
+                this.showSupplierModal = true;
+            } else {
+                this.loadSupplierProducts();
+            }
+        },
+        
+        async saveNewSupplier() {
+            if (!this.newSupplierName.trim()) {
+                alert('اسم المورد مطلوب');
+                return;
+            }
+            try {
+                const r = await fetch('/api/suppliers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+                    body: JSON.stringify({
+                        name: this.newSupplierName.trim(),
+                        phone: this.newSupplierPhone.trim(),
+                        address: '', notes: '', latitude: null, longitude: null,
+                        phones: this.newSupplierPhone ? [{phone: this.newSupplierPhone, label: 'جوال', is_primary: 1}] : [],
+                        accounts: []
+                    })
+                });
+                const data = await r.json();
+                if (data.success) {
+                    const select = this.$refs.supplierSelect;
+                    const opt = document.createElement('option');
+                    opt.value = data.id;
+                    opt.textContent = this.newSupplierName.trim();
+                    select.insertBefore(opt, select.querySelector('option[value="__new__"]'));
+                    this.supplierId = String(data.id);
+                    this.showSupplierModal = false;
+                    this.loadSupplierProducts();
+                    alert('✅ تم إضافة المورد');
+                } else {
+                    alert('❌ ' + (data.message || 'خطأ'));
+                }
+            } catch(e) {
+                alert('❌ ' + e.message);
+            }
+        },
+        
+        showAddProductModal(index) {
+            if (!this.supplierId) {
+                alert('اختر المورد أولاً');
+                return;
+            }
+            this.currentItemIndex = index;
+            this.newProduct = {
+                supplier_product_name: '',
+                pack_size: 1,
+                product_id: null,
+                product_name: '',
+                product_barcode: ''
+            };
+            this.productSearchQuery = '';
+            this.productSearchResults = [];
+            this.showAddNewProductForm = false;
+            this.showModal = true;
+        },
+        
+        async searchProducts() {
+            if (this.productSearchQuery.length < 2) {
+                this.productSearchResults = [];
+                return;
+            }
+            const r = await fetch(`/api/products/search?q=${encodeURIComponent(this.productSearchQuery)}`);
+            const data = await r.json();
+            this.productSearchResults = data.products || [];
+        },
+        
+        selectProduct(p) {
+            this.newProduct.product_id = p.id;
+            this.newProduct.product_name = p.name;
+            this.newProduct.product_barcode = p.barcode || 'بدون باركود';
+            this.productSearchResults = [];
+            this.productSearchQuery = '';
+        },
+        
+        async createQuickProduct() {
+            if (!this.quickNewProduct.name) {
+                alert('اسم الصنف مطلوب');
+                return;
+            }
+            const r = await fetch('/api/products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+                body: JSON.stringify({
+                    name: this.quickNewProduct.name,
+                    barcode: this.quickNewProduct.barcode,
+                    is_active: true
+                })
+            });
+            const data = await r.json();
+            if (data.success) {
+                this.selectProduct(data.product);
+                this.showAddNewProductForm = false;
+                this.quickNewProduct = { name: '', barcode: '' };
+            } else {
+                alert(data.message || 'خطأ في إضافة الصنف');
+            }
+        },
+        
+        async saveNewSupplierProduct() {
+            if (!this.newProduct.supplier_product_name || !this.newProduct.product_id) {
+                alert('يجب ملء جميع الحقول المطلوبة');
+                return;
+            }
+            
+            const r = await fetch('/api/supplier-products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+                body: JSON.stringify({
+                    quick_add: true,
+                    supplier_id: this.supplierId,
+                    product_id: this.newProduct.product_id,
+                    supplier_product_name: this.newProduct.supplier_product_name,
+                    pack_size: this.newProduct.pack_size
+                })
+            });
+            const data = await r.json();
+            if (data.success) {
+                // إضافة للقائمة مباشرة
+                this.supplierProducts.push(data.product);
+                // اختيار الصنف الجديد تلقائياً
+                if (this.currentItemIndex !== null) {
+                    this.items[this.currentItemIndex].supplier_product_id = data.id;
+                    this.updateItemInfo(this.currentItemIndex);
+                }
+                this.showModal = false;
+            } else {
+                alert(data.message || 'خطأ في حفظ الصنف');
+            }
         },
         
         async loadSupplierProducts() {

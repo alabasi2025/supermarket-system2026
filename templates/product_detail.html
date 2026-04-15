@@ -80,13 +80,13 @@
                 <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
                     <span class="text-sm text-gray-500 dark:text-gray-400">التكلفة</span>
                     <span class="text-lg font-bold text-gray-700 dark:text-gray-200">
-                        {% if product.cost_price %}{{ '{:,.0f}'.format(product.cost_price) }} ر.ي{% else %}-{% endif %}
+                        {% if product.cost_price %}{{ product.cost_price|float|round(0)|int }} ر.ي{% else %}-{% endif %}
                     </span>
                 </div>
                 <div class="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl">
                     <span class="text-sm text-indigo-600 dark:text-indigo-400">سعر البيع</span>
                     <span class="text-xl font-bold text-indigo-700 dark:text-indigo-300">
-                        {% if product.sell_price %}{{ '{:,.0f}'.format(product.sell_price) }} ر.ي{% else %}-{% endif %}
+                        {% if product.sell_price %}{{ product.sell_price|float|round(0)|int }} ر.ي{% else %}-{% endif %}
                     </span>
                 </div>
                 {% if product.cost_price and product.sell_price and product.cost_price > 0 %}
@@ -98,7 +98,7 @@
                         الربح
                     </span>
                     <span class="text-lg font-bold {% if profit > 0 %}text-green-700 dark:text-green-300{% elif profit < 0 %}text-red-700 dark:text-red-300{% else %}text-gray-700{% endif %}">
-                        {{ '{:,.0f}'.format(profit) }} ر.ي
+                        {{ profit|float|round(0)|int }} ر.ي
                         <span class="text-xs font-normal">({{ margin }}%)</span>
                     </span>
                 </div>
@@ -164,16 +164,16 @@
                         <td class="px-4 py-3 font-mono text-gray-600 dark:text-gray-400">{{ b.barcode or '-' }}</td>
                         <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ b.pack_size or 1 }}</td>
                         <td class="px-4 py-3 text-gray-600 dark:text-gray-400">
-                            {% if b.cost_price %}{{ '{:,.0f}'.format(b.cost_price) }}{% else %}-{% endif %}
+                            {% if b.cost_price %}{{ b.cost_price|float|round(0)|int }}{% else %}-{% endif %}
                         </td>
                         <td class="px-4 py-3 font-bold text-indigo-700 dark:text-indigo-400">
-                            {% if b.sell_price %}{{ '{:,.0f}'.format(b.sell_price) }}{% else %}-{% endif %}
+                            {% if b.sell_price %}{{ b.sell_price|float|round(0)|int }}{% else %}-{% endif %}
                         </td>
                         <td class="px-4 py-3 font-semibold 
                             {% if profit > 0 %}text-green-600 dark:text-green-400
                             {% elif profit < 0 %}text-red-600 dark:text-red-400
                             {% else %}text-gray-400{% endif %}">
-                            {% if profit %}{{ '{:,.0f}'.format(profit) }}{% else %}-{% endif %}
+                            {% if profit %}{{ profit|float|round(0)|int }}{% else %}-{% endif %}
                         </td>
                         <td class="px-4 py-3">
                             {% if margin %}
@@ -298,7 +298,7 @@
                     {% for sp in supplier_prices %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <td class="px-4 py-2.5 font-medium text-gray-700 dark:text-gray-300">{{ sp.supplier_name }}</td>
-                        <td class="px-4 py-2.5 font-bold text-indigo-700 dark:text-indigo-400">{{ '{:,.0f}'.format(sp.price or sp.unit_price or 0) }} ر.ي</td>
+                        <td class="px-4 py-2.5 font-bold text-indigo-700 dark:text-indigo-400">{{ sp.price or sp.unit_price or 0|float|round(0)|int }} ر.ي</td>
                         <td class="px-4 py-2.5 text-xs text-gray-500">{{ sp.recorded_at }}</td>
                     </tr>
                     {% endfor %}
@@ -343,3 +343,4 @@ async function deleteBarcode(barcodeId) {
 }
 </script>
 {% endblock %}
+

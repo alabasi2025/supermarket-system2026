@@ -51,41 +51,62 @@
         </div>
     </div>
 
+    <!-- تبويبات -->
+    <div class="flex gap-2 border-b-2 border-gray-200 dark:border-gray-700">
+        <button id="tab-items" onclick="switchTab('items')" class="px-5 py-3 font-bold text-sm rounded-t-xl transition-colors bg-indigo-600 text-white -mb-0.5 border-b-2 border-indigo-600">
+            📦 الأصناف المسجلة <span class="ml-1 px-2 py-0.5 rounded-full bg-white/20 text-xs">{{ items|length }}</span>
+        </button>
+        <button id="tab-requests" onclick="switchTab('requests')" class="px-5 py-3 font-bold text-sm rounded-t-xl transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 -mb-0.5">
+            📝 طلبات غير الموجود <span class="ml-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs">{{ requests|length }}</span>
+        </button>
+    </div>
+
     <!-- عناصر الجرد -->
-    <div class="card overflow-hidden">
-        <div class="p-5 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
-            <h3 class="text-lg font-bold">📦 الأصناف المسجلة في الجرد ({{ items|length }})</h3>
+    <div id="section-items" class="card overflow-hidden">
+        <div class="p-4 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-indigo-500 to-purple-500 text-white flex items-center justify-between">
+            <h3 class="text-lg font-bold">📦 الأصناف المسجلة ({{ items|length }})</h3>
+            <div class="flex items-center gap-2">
+                <span class="text-sm text-white/80">ترتيب حسب المدة:</span>
+                <button onclick="sortByDuration('asc')" id="sortAsc" class="px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-sm font-bold transition-colors">⬆️ الأقرب انتهاءً</button>
+                <button onclick="sortByDuration('desc')" id="sortDesc" class="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/30 text-sm font-bold transition-colors">⬇️ الأبعد انتهاءً</button>
+            </div>
         </div>
         <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+            <table class="w-full text-sm" id="itemsTable">
                 <thead>
                     <tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">#</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الصنف</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الباركود</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الوحدة</th>
-                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">العبوة</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الكمية</th>
-                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الباتش</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الإنتاج</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الانتهاء</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400 cursor-pointer" onclick="sortByDuration('asc')">⏳ المدة المتبقية</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الباتش</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">ملاحظة</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">🎤</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="itemsBody">
                     {% for item in items %}
-                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                        data-expiry="{{ item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '9999-12-31' }}">
                         <td class="py-3 px-4 font-mono text-gray-400">{{ loop.index }}</td>
                         <td class="py-3 px-4 font-bold text-gray-800 dark:text-gray-100">{{ item.product_name or item.product_name_db }}</td>
-                        <td class="py-3 px-4 font-mono text-gray-600 dark:text-gray-400">{{ item.barcode }}</td>
+                        <td class="py-3 px-4 font-mono text-gray-500 text-xs">{{ item.barcode }}</td>
                         <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ item.selected_unit or item.unit or '-' }}</td>
-                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ item.pack_size or 1 }}</td>
                         <td class="py-3 px-4 font-bold text-indigo-600 dark:text-indigo-400">{{ item.counted_stock }}</td>
-                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ item.batch_no or '-' }}</td>
                         <td class="py-3 px-4 text-gray-500">{{ item.production_date.strftime('%Y-%m-%d') if item.production_date else '-' }}</td>
                         <td class="py-3 px-4 text-gray-500">{{ item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '-' }}</td>
-                        <td class="py-3 px-4 text-gray-500 max-w-[200px] truncate" title="{{ item.notes or '' }}">{{ item.notes or '-' }}</td>
+                        <td class="py-3 px-4">
+                            {% if item.expiry_date %}
+                            {% set today = now() if now is defined else none %}
+                            <span class="duration-badge" data-expiry="{{ item.expiry_date.strftime('%Y-%m-%d') }}"></span>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ item.batch_no or '-' }}</td>
+                        <td class="py-3 px-4 text-gray-500 max-w-[150px] truncate" title="{{ item.notes or '' }}">{{ item.notes or '-' }}</td>
                         <td class="py-3 px-4">
                             {% if item.voice_note_path %}
                             <audio controls class="h-8 w-32"><source src="/{{ item.voice_note_path }}"></audio>
@@ -103,9 +124,14 @@
     </div>
 
     <!-- طلبات الأصناف غير الموجودة -->
-    <div class="card overflow-hidden">
-        <div class="p-5 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+    <div id="section-requests" class="card overflow-hidden hidden">
+        <div class="p-4 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-amber-500 to-orange-500 text-white flex items-center justify-between">
             <h3 class="text-lg font-bold">📝 طلبات الأصناف غير الموجودة ({{ requests|length }})</h3>
+            <div class="flex items-center gap-2">
+                <span class="text-sm text-white/80">ترتيب:</span>
+                <button onclick="sortReqByDuration('asc')" id="sortReqAsc" class="px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-sm font-bold transition-colors">⬆️ الأقرب انتهاءً</button>
+                <button onclick="sortReqByDuration('desc')" id="sortReqDesc" class="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/30 text-sm font-bold transition-colors">⬇️ الأبعد انتهاءً</button>
+            </div>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
@@ -117,19 +143,37 @@
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">القسم</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الوحدة</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الكمية</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الإنتاج</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الانتهاء</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400 cursor-pointer" onclick="sortReqByDuration('asc')">⏳ المدة المتبقية</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الباتش</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الحالة</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">ملاحظة</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="requestsBody">
                     {% for req in requests %}
-                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors {% if req.is_duplicate %}bg-orange-50 dark:bg-orange-900/10{% endif %}"
+                        data-expiry="{{ req.expiry_date.strftime('%Y-%m-%d') if req.expiry_date else '9999-12-31' }}">
                         <td class="py-3 px-4 font-mono text-gray-400">{{ loop.index }}</td>
-                        <td class="py-3 px-4 font-mono font-bold text-gray-800 dark:text-gray-100">{{ req.barcode }}</td>
+                        <td class="py-3 px-4">
+                            <span class="font-mono font-bold text-gray-800 dark:text-gray-100">{{ req.barcode }}</span>
+                            {% if req.is_duplicate %}
+                            <span class="mr-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-300">🔁 مكرر</span>
+                            {% endif %}
+                        </td>
                         <td class="py-3 px-4 text-gray-800 dark:text-gray-100">{{ req.product_name or 'غير محدد' }}</td>
                         <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ req.category_name or 'غير محدد' }}</td>
                         <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ req.unit or '-' }}</td>
                         <td class="py-3 px-4 font-bold text-amber-600 dark:text-amber-400">{{ req.quantity_counted or 1 }}</td>
+                        <td class="py-3 px-4 text-gray-500">{{ req.production_date.strftime('%Y-%m-%d') if req.production_date else '-' }}</td>
+                        <td class="py-3 px-4 text-gray-500">{{ req.expiry_date.strftime('%Y-%m-%d') if req.expiry_date else '-' }}</td>
+                        <td class="py-3 px-4">
+                            {% if req.expiry_date %}
+                            <span class="req-duration-badge" data-expiry="{{ req.expiry_date.strftime('%Y-%m-%d') }}"></span>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ req.batch_no or '-' }}</td>
                         <td class="py-3 px-4">
                             {% if req.status == 'pending' %}
                             <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">قيد المراجعة</span>
@@ -145,7 +189,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="py-8 text-center text-gray-400">لا توجد طلبات</td>
+                        <td colspan="11" class="py-8 text-center text-gray-400">لا توجد طلبات</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -153,4 +197,146 @@
         </div>
     </div>
 </div>
+
+<script>
+// حساب المدة المتبقية لكل صنف
+document.addEventListener('DOMContentLoaded', () => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    document.querySelectorAll('.duration-badge').forEach(el => {
+        const expiry = el.dataset.expiry;
+        if (!expiry || expiry === '9999-12-31') return;
+        
+        const expDate = new Date(expiry);
+        const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+        
+        let text, cls;
+        if (diffDays < 0) {
+            text = `منتهي منذ ${Math.abs(diffDays)} يوم`;
+            cls = 'px-2 py-1 rounded-lg bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-xs font-bold';
+        } else if (diffDays <= 30) {
+            text = `${diffDays} يوم`;
+            cls = 'px-2 py-1 rounded-lg bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-xs font-bold';
+        } else if (diffDays <= 90) {
+            text = `${diffDays} يوم`;
+            cls = 'px-2 py-1 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-xs font-bold';
+        } else if (diffDays <= 365) {
+            const months = Math.ceil(diffDays / 30);
+            text = `${months} شهر`;
+            cls = 'px-2 py-1 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs font-bold';
+        } else {
+            const years = Math.floor(diffDays / 365);
+            const months = Math.ceil((diffDays % 365) / 30);
+            text = months > 0 ? `${years}س ${months}ش` : `${years} سنة`;
+            cls = 'px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs font-bold';
+        }
+        el.className = cls;
+        el.textContent = text;
+        el.dataset.days = diffDays;
+    });
+});
+
+function sortByDuration(dir) {
+    const tbody = document.getElementById('itemsBody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const today = new Date(); today.setHours(0,0,0,0);
+    
+    rows.sort((a, b) => {
+        const ea = a.dataset.expiry || '9999-12-31';
+        const eb = b.dataset.expiry || '9999-12-31';
+        const da = Math.ceil((new Date(ea) - today) / 86400000);
+        const db = Math.ceil((new Date(eb) - today) / 86400000);
+        return dir === 'asc' ? da - db : db - da;
+    });
+    
+    // إعادة ترتيب الصفوف مع تحديث الأرقام
+    rows.forEach((r, i) => {
+        tbody.appendChild(r);
+        const firstCell = r.querySelector('td:first-child');
+        if (firstCell) firstCell.textContent = i + 1;
+    });
+    
+    // تحديث الأزرار
+    document.getElementById('sortAsc').className = `px-3 py-1 rounded-lg text-sm font-bold transition-colors ${dir==='asc' ? 'bg-white/40' : 'bg-white/10 hover:bg-white/30'}`;
+    document.getElementById('sortDesc').className = `px-3 py-1 rounded-lg text-sm font-bold transition-colors ${dir==='desc' ? 'bg-white/40' : 'bg-white/10 hover:bg-white/30'}`;
+}
+
+// فرز الطلبات
+function sortReqByDuration(dir) {
+    const tbody = document.getElementById('requestsBody');
+    if (!tbody) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+        const ea = a.dataset.expiry || '9999-12-31';
+        const eb = b.dataset.expiry || '9999-12-31';
+        const da = Math.ceil((new Date(ea) - today) / 86400000);
+        const db = Math.ceil((new Date(eb) - today) / 86400000);
+        return dir === 'asc' ? da - db : db - da;
+    });
+    rows.forEach((r, i) => {
+        tbody.appendChild(r);
+        const fc = r.querySelector('td:first-child');
+        if (fc) fc.textContent = i + 1;
+    });
+    document.getElementById('sortReqAsc').className = `px-3 py-1 rounded-lg text-sm font-bold transition-colors ${dir==='asc' ? 'bg-white/40' : 'bg-white/10 hover:bg-white/30'}`;
+    document.getElementById('sortReqDesc').className = `px-3 py-1 rounded-lg text-sm font-bold transition-colors ${dir==='desc' ? 'bg-white/40' : 'bg-white/10 hover:bg-white/30'}`;
+}
+
+// حساب المدة للطلبات
+document.addEventListener('DOMContentLoaded', () => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    document.querySelectorAll('.req-duration-badge').forEach(el => {
+        const expiry = el.dataset.expiry;
+        if (!expiry) return;
+        const diffDays = Math.ceil((new Date(expiry) - today) / 86400000);
+        let text, cls;
+        if (diffDays < 0) {
+            text = `منتهي منذ ${Math.abs(diffDays)} يوم`;
+            cls = 'px-2 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-bold';
+        } else if (diffDays <= 30) {
+            text = `${diffDays} يوم`;
+            cls = 'px-2 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-bold';
+        } else if (diffDays <= 90) {
+            text = `${diffDays} يوم`;
+            cls = 'px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-xs font-bold';
+        } else if (diffDays <= 365) {
+            text = `${Math.ceil(diffDays/30)} شهر`;
+            cls = 'px-2 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-bold';
+        } else {
+            const y = Math.floor(diffDays/365), m = Math.ceil((diffDays%365)/30);
+            text = m > 0 ? `${y}س ${m}ش` : `${y} سنة`;
+            cls = 'px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 text-xs font-bold';
+        }
+        el.className = cls; el.textContent = text; el.dataset.days = diffDays;
+    });
+});
+
+function switchTab(tab) {
+    // sections
+    document.getElementById('section-items').classList.toggle('hidden', tab !== 'items');
+    document.getElementById('section-requests').classList.toggle('hidden', tab !== 'requests');
+    
+    // tabs
+    const activeClass = ['bg-indigo-600', 'text-white', 'border-b-2', 'border-indigo-600'];
+    const inactiveClass = ['text-gray-600', 'dark:text-gray-400', 'hover:bg-gray-100', 'dark:hover:bg-gray-800'];
+    
+    const itemsBtn = document.getElementById('tab-items');
+    const reqBtn = document.getElementById('tab-requests');
+    
+    if (tab === 'items') {
+        activeClass.forEach(c => itemsBtn.classList.add(c));
+        inactiveClass.forEach(c => itemsBtn.classList.remove(c));
+        inactiveClass.forEach(c => reqBtn.classList.add(c));
+        activeClass.forEach(c => reqBtn.classList.remove(c));
+    } else {
+        activeClass.forEach(c => reqBtn.classList.add(c));
+        inactiveClass.forEach(c => reqBtn.classList.remove(c));
+        inactiveClass.forEach(c => itemsBtn.classList.add(c));
+        activeClass.forEach(c => itemsBtn.classList.remove(c));
+    }
+}
+</script>
 {% endblock %}

@@ -281,10 +281,39 @@
         }
         .dark .dark-toggle { background: #334155; color: #fbbf24; }
         .dark-toggle:hover { transform: scale(1.05); }
+        
+        /* Alpine.js cloak */
+        [x-cloak] { display: none !important; }
     </style>
+    <script>
+        // دالة CSRF Headers
+        function csrfHeaders() {
+            const token = document.querySelector('meta[name="csrf-token"]')?.content || 
+                          document.querySelector('input[name="csrf_token"]')?.value || '';
+            return { 'X-CSRF-Token': token };
+        }
+        function csrfH() { return csrfHeaders(); }
+        
+        // دوال الإشعارات
+        function showSuccess(msg) {
+            alert('✅ ' + msg);
+        }
+        function showError(msg) {
+            alert('❌ ' + msg);
+        }
+        function showWarning(msg) {
+            alert('⚠️ ' + msg);
+        }
+    </script>
     {% block head %}{% endblock %}
 </head>
 <body x-data="{ mobileMenu: false }">
+
+<!-- Server Down Bar -->
+<div id="server-status-bar" class="hidden fixed top-0 inset-x-0 z-[999] bg-red-600 text-white text-center py-2 px-4 text-sm font-bold">
+    ⚠️ النظام توقف مؤقتاً — جاري إعادة الاتصال...
+    <button onclick="window.location.reload()" class="mr-3 px-3 py-0.5 bg-white text-red-600 rounded-lg text-xs">تحديث الآن</button>
+</div>
 
 <!-- Mobile Overlay -->
 <div x-show="mobileMenu" @click="mobileMenu=false" 
@@ -661,6 +690,75 @@
 if (localStorage.getItem('darkMode') === 'true') {
     document.documentElement.classList.add('dark');
 }
+
+// ── SSE Real-time updates ──
+(function() {
+    let es = null;
+    let reconnectTimer = null;
+    let serverWasDown = false;
+    let lastData = {};
+    
+    function connect() {
+        if (es) { try { es.close(); } catch(e) {} }
+        
+        es = new EventSource('/api/events');
+        
+        es.onopen = function() {
+            if (serverWasDown) {
+                window.location.reload();
+            }
+            serverWasDown = false;
+            const bar = document.getElementById('server-status-bar');
+            if (bar) bar.classList.add('hidden');
+            clearTimeout(reconnectTimer);
+        };
+        
+        es.onmessage = function(e) {
+            try {
+                const data = JSON.parse(e.data);
+                if (data.error) return;
+                
+                // تحديث عداد الطلبات
+                const reqBadge = document.getElementById('navChatBadge');
+                
+                // تحديث عداد الدردشة
+                if (data.unread_chat !== undefined) {
+                    const bell = document.getElementById('notifBellBadge');
+                    const nav = document.getElementById('navChatBadge');
+                    if (bell) {
+                        if (data.unread_chat > 0) { bell.textContent = data.unread_chat; bell.classList.remove('hidden'); }
+                        else { bell.classList.add('hidden'); }
+                    }
+                }
+                
+                // إذا تغيرت البيانات وكنا في صفحة الجرد — حدّث القائمة
+                const currentPage = window.location.pathname;
+                if (data.stocktake_items !== lastData.stocktake_items && currentPage.includes('stocktake')) {
+                    if (typeof loadRecentItems === 'function') loadRecentItems();
+                }
+                if (data.pending_requests !== lastData.pending_requests && currentPage.includes('stocktake')) {
+                    if (typeof loadRecentRequests === 'function') loadRecentRequests();
+                }
+                
+                lastData = data;
+            } catch(err) {}
+        };
+        
+        es.onerror = function() {
+            serverWasDown = true;
+            const bar = document.getElementById('server-status-bar');
+            if (bar) bar.classList.remove('hidden');
+            es.close();
+            // إعادة المحاولة بعد 10 ثوانٍ
+            reconnectTimer = setTimeout(connect, 10000);
+        };
+    }
+    
+    // SSE معطل مؤقتاً — polling بدلاً منه
+    // if (!window.location.pathname.includes('login')) {
+    //     connect();
+    // }
+})();
 
 // ── Mobile View Toggle ──────────────────────────────────
 const mobileViewBtn = document.getElementById('mobileViewBtn');
