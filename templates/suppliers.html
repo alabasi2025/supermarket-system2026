@@ -298,10 +298,10 @@ function getCurrentLocation() {
             map.setView([lat, lng], 15);
             setMarker(lat, lng);
         }, function() {
-            alert('لم نتمكن من الحصول على موقعك');
+            showToast('\', 'error', 4000);
         });
     } else {
-        alert('المتصفح لا يدعم تحديد الموقع');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -386,7 +386,7 @@ async function openEditModal(id) {
         (data.accounts || []).forEach(a => addAccount(a.account_name, a.account_number || ''));
         document.getElementById('supplierModal').classList.remove('hidden');
         setTimeout(() => initMap(lat, lng), 100);
-    } catch { alert('حدث خطأ'); }
+    } catch { showToast('\', 'error', 4000); }
 }
 
 function closeModal() {
@@ -521,4 +521,5 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endblock %}
+
 

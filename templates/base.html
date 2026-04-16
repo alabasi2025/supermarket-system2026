@@ -294,6 +294,37 @@
         }
         function csrfH() { return csrfHeaders(); }
         
+        // تحديث CSRF تلقائي
+        async function refreshCsrf() {
+            try {
+                const r = await fetch('/api/csrf-token');
+                const d = await r.json();
+                if (d.token) {
+                    const meta = document.querySelector('meta[name="csrf-token"]');
+                    if (meta) meta.content = d.token;
+                    const input = document.getElementById('csrfToken');
+                    if (input) input.value = d.token;
+                }
+                return d.token;
+            } catch(e) { return null; }
+        }
+        
+        // fetch مع إعادة محاولة تلقائية عند فشل CSRF
+        async function safeFetch(url, options = {}) {
+            let response = await fetch(url, options);
+            if (response.status === 400) {
+                const body = await response.clone().json().catch(() => null);
+                if (body && body.message && body.message.includes('رمز الحماية')) {
+                    const newToken = await refreshCsrf();
+                    if (newToken && options.headers) {
+                        options.headers['X-CSRF-Token'] = newToken;
+                        response = await fetch(url, options);
+                    }
+                }
+            }
+            return response;
+        }
+        
         // دوال الإشعارات
         function showSuccess(msg) {
             alert('✅ ' + msg);
@@ -866,3 +897,4 @@ function showToast(message, type = 'success', duration = 3000) {
 
 </body>
 </html>
+

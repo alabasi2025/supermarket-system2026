@@ -449,7 +449,7 @@ async function startSession() {
     });
     const contentType = resp.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
-        alert('انتهت الجلسة أو رمز الحماية غير صالح. أعد تحميل الصفحة ثم سجّل الدخول إذا لزم.');
+        showToast('\', 'error', 4000);
         return;
     }
     const data = await resp.json();
@@ -523,9 +523,19 @@ function searchBarcode() {
     if (barcode) processBarcode(barcode);
 }
 
-function populateExistingUnits(units, barcode) {
+function populateExistingUnits(units, barcode, serverMatchedIdx) {
     const select = document.getElementById('existingUnit');
     select.innerHTML = '';
+
+    // استخدم الفهرس من السيرفر إذا موجود، وإلا ابحث بالباركود
+    let matchedIdx = (typeof serverMatchedIdx === 'number') ? serverMatchedIdx : -1;
+    if (matchedIdx < 0) {
+        units.forEach((u, idx) => {
+            if ((u.barcode || '') === barcode) matchedIdx = idx;
+        });
+    }
+    if (matchedIdx < 0) matchedIdx = 0;
+
     units.forEach((u, idx) => {
         const opt = document.createElement('option');
         opt.value = u.unit || 'حبه';
@@ -536,7 +546,7 @@ function populateExistingUnits(units, barcode) {
         opt.dataset.sell = u.sell_price || u.price || 0;
         const convLabel = (u.conversion_factor || u.pack_size || 1) > 1 ? ` (= ${u.conversion_factor || u.pack_size} ${units[0]?.unit || 'أساسية'})` : ' (أساسية)';
         opt.textContent = `${u.unit || 'حبه'}${convLabel}`;
-        if ((u.barcode || '') === barcode || idx === 0) opt.selected = true;
+        if (idx === matchedIdx) opt.selected = true;
         select.appendChild(opt);
     });
     
@@ -598,7 +608,7 @@ function calcBaseQty() {
 
 async function processBarcode(barcode) {
     if (!currentSessionId) {
-        alert('ابدأ جلسة جرد أولاً');
+        showToast('\', 'error', 4000);
         return;
     }
     const resp = await fetch('/api/stocktake/scan', {
@@ -630,7 +640,7 @@ async function processBarcode(barcode) {
         document.getElementById('existingProductionDate').value = '';
         document.getElementById('existingExpiryDate').value = '';
         document.getElementById('existingNotes').value = '';
-        populateExistingUnits(lastFoundUnits, barcode);
+        populateExistingUnits(lastFoundUnits, barcode, data.matched_unit_index);
     } else {
         lastMissingBarcode = barcode;
         document.getElementById('foundCard').classList.add('hidden');
@@ -645,12 +655,12 @@ async function saveExistingItem() {
     const expiryDate = document.getElementById('existingExpiryDate').value;
     
     if (!productionDate) {
-        alert('تاريخ الإنتاج مطلوب');
+        showToast('\', 'error', 4000);
         document.getElementById('existingProductionDate').focus();
         return;
     }
     if (!expiryDate) {
-        alert('تاريخ الانتهاء مطلوب');
+        showToast('\', 'error', 4000);
         document.getElementById('existingExpiryDate').focus();
         return;
     }
@@ -661,7 +671,7 @@ async function saveExistingItem() {
     const resp = await fetch('/api/stocktake/save-item', { method: 'POST', headers: csrfHeaders(), body: fd });
     const contentType = resp.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
-        alert('تعذر الحفظ: انتهت الجلسة أو رمز الحماية غير صالح');
+        showToast('\', 'error', 4000);
         return;
     }
     const data = await resp.json();
@@ -708,7 +718,7 @@ async function submitRequest() {
     const resp = await fetch('/api/stocktake/request-product', { method: 'POST', headers: csrfHeaders(), body: fd });
     const contentType = resp.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
-        alert('تعذر رفع الطلب: انتهت الجلسة أو رمز الحماية غير صالح');
+        showToast('\', 'error', 4000);
         return;
     }
     const data = await resp.json();
@@ -734,7 +744,7 @@ let erUnitCount = 0;
 const erUnitOpts = `<option value="">-- اختر --</option>{% for u in units %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}`;
 
 async function openFullEditRequest() {
-    if (!lastFoundProduct) { alert('امسح صنف أولاً'); return; }
+    if (!lastFoundProduct) { showToast('\', 'error', 4000); return; }
     const p = lastFoundProduct;
     
     document.getElementById('erProductId').value = p.id;
@@ -890,7 +900,7 @@ async function submitFullEditRequest() {
     });
     const data = await resp.json();
     if (data.success) {
-        alert('تم رفع طلب تعديل الصنف للمراجعة ✅');
+        showToast('\', 'error', 4000);
         closeFullEditRequest();
     } else {
         alert(data.message || 'فشل رفع الطلب');
@@ -899,7 +909,7 @@ async function submitFullEditRequest() {
 
 async function closeSession() {
     if (!currentSessionId) {
-        alert('لا توجد جلسة مفتوحة');
+        showToast('\', 'error', 4000);
         return;
     }
     if (!confirm('هل تريد إغلاق جلسة الجرد؟ لن تتمكن من إضافة عناصر جديدة بعد الإغلاق.')) return;
@@ -911,7 +921,7 @@ async function closeSession() {
     });
     const data = await resp.json();
     if (data.success) {
-        alert('تم إغلاق جلسة الجرد');
+        showToast('\', 'error', 4000);
         window.location.reload();
     } else {
         alert(data.message || 'تعذر إغلاق الجلسة');
@@ -932,7 +942,7 @@ async function toggleRecording(type) {
     
     // Check if mediaDevices is available
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert('التسجيل الصوتي غير متاح في هذا المتصفح.\nجرب استخدام Chrome أو Firefox.');
+        showToast('\', 'error', 4000);
         return;
     }
     
@@ -1004,11 +1014,11 @@ async function toggleRecording(type) {
         } catch (err) {
             console.error('Microphone error:', err);
             if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                alert('تم رفض إذن الميكروفون.\nاسمح للموقع بالوصول للميكروفون من إعدادات المتصفح.');
+                showToast('\', 'error', 4000);
             } else if (err.name === 'NotFoundError') {
-                alert('لم يتم العثور على ميكروفون.\nتأكد من توصيل ميكروفون.');
+                showToast('\', 'error', 4000);
             } else if (err.name === 'NotReadableError' || err.name === 'AbortError') {
-                alert('الميكروفون مستخدم من تطبيق آخر.\nأغلق التطبيقات الأخرى التي تستخدم الميكروفون.');
+                showToast('\', 'error', 4000);
             } else {
                 alert('تعذر الوصول للميكروفون:\n' + (err.message || err.name || err));
             }
@@ -1094,3 +1104,6 @@ async function loadRecentRequests() {
 }
 </script>
 {% endblock %}
+
+
+

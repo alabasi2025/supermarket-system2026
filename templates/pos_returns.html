@@ -234,11 +234,11 @@
                             if (data.found) {
                                 this.selectedInvoice = data.invoice;
                             } else {
-                                alert('لم يتم العثور على الفاتورة');
+                                showToast('\', 'error', 4000);
                                 this.selectedInvoice = null;
                             }
                         })
-                        .catch(() => alert('خطأ في البحث'));
+                        .catch(() => showToast('\', 'error', 4000));
                 },
                 
                 isItemReturned(itemId) {
@@ -271,7 +271,7 @@
                     // Validate reasons
                     const missingReason = this.returnItems.find(i => !i.reason);
                     if (missingReason) {
-                        alert('يرجى تحديد سبب الإرجاع لجميع الأصناف');
+                        showToast('\', 'error', 4000);
                         return;
                     }
                     
@@ -292,13 +292,15 @@
                             this.selectedInvoice = null;
                             this.invoiceSearch = '';
                         } else {
-                            alert('فشل في معالجة الإرجاع');
+                            showToast('\', 'error', 4000);
                         }
                     })
-                    .catch(() => alert('خطأ في الاتصال'));
+                    .catch(() => showToast('\', 'error', 4000));
                 }
             }
         }
     </script>
 </body>
 </html>
+
+

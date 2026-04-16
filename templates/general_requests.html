@@ -428,7 +428,7 @@ function addPrUnit(unit, barcode, conv, cost, sell) {
 async function submitProductReq() {
     const mode = document.getElementById('prMode').value;
     const name = document.getElementById('prName').value.trim();
-    if (!name) { alert('اسم الصنف مطلوب'); return; }
+    if (!name) { showToast('\', 'error', 4000); return; }
     
     const units = [];
     document.querySelectorAll('#prUnitsContainer > div').forEach(div => {
@@ -492,8 +492,8 @@ function closeGeneralReq() { document.getElementById('generalReqModal').classLis
 async function submitGeneralReq() {
     const title = document.getElementById('grTitleInput').value.trim();
     const details = document.getElementById('grDetails').value.trim();
-    if (!title) { alert('العنوان مطلوب'); return; }
-    if (!details) { alert('التفاصيل مطلوبة'); return; }
+    if (!title) { showToast('\', 'error', 4000); return; }
+    if (!details) { showToast('\', 'error', 4000); return; }
     
     const resp = await fetch('/api/requests', {
         method: 'POST', headers: csrfH(),
@@ -565,3 +565,5 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 {% endblock %}
+
+

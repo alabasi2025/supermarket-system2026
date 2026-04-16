@@ -206,7 +206,7 @@
         <!-- فورم إضافة وحدة -->
         <div id="addUnitSection" class="hidden p-5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
             <h3 class="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">➕ إضافة وحدة جديدة</h3>
-            <form id="addUnitForm" onsubmit="addUnit(event)" class="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <form id="addUnitForm" onsubmit="addUnit(event)" onkeydown="if(event.key==='Enter'&&event.target.tagName==='INPUT'&&event.target.type!=='submit'){event.preventDefault();}" class="grid grid-cols-2 md:grid-cols-6 gap-3">
                 <input type="text" id="newUnitName" placeholder="الوحدة (كرتون، باكت...)" required
                        class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg">
                 <input type="text" id="newUnitBarcode" placeholder="الباركود" dir="ltr"
@@ -329,7 +329,7 @@ async function addUnit(e) {
         const r = await resp.json();
         if (r.success) location.reload();
         else alert(r.message || 'خطأ');
-    } catch(e) { alert('خطأ في الاتصال'); }
+    } catch(e) { showToast('\', 'error', 4000); }
 }
 
 async function deleteBarcode(barcodeId) {
@@ -339,8 +339,10 @@ async function deleteBarcode(barcodeId) {
         const r = await resp.json();
         if (r.success) location.reload();
         else alert(r.message || 'خطأ');
-    } catch(e) { alert('خطأ'); }
+    } catch(e) { showToast('\', 'error', 4000); }
 }
 </script>
 {% endblock %}
+
+
 

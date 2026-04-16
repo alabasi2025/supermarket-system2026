@@ -1,110 +1,97 @@
-# -*- coding: utf-8 -*-
-import psycopg2, psycopg2.extras, sys
-sys.stdout.reconfigure(encoding='utf-8')
-conn = psycopg2.connect(host='localhost', database='supermarket', user='postgres', password='774424555')
-cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+import json, psycopg2
 
-print("=" * 60)
-print("تحليل شامل لقاعدة بيانات سوبر ماركت العباسي")
-print("=" * 60)
+conn = psycopg2.connect(dbname='supermarket', user='postgres', password='774424555', host='localhost')
+cur = conn.cursor()
 
-# 1) الأصناف
-cur.execute("SELECT COUNT(*) as c FROM products WHERE is_active = TRUE")
-active = cur.fetchone()['c']
-cur.execute("SELECT COUNT(*) as c FROM products WHERE is_active = FALSE")
-inactive = cur.fetchone()['c']
-cur.execute("SELECT COUNT(*) as c FROM products")
-total = cur.fetchone()['c']
-print(f"\n📦 الأصناف:")
-print(f"  إجمالي: {total}")
-print(f"  فعّال: {active}")
-print(f"  معطّل: {inactive}")
+# Get ALL tables with their schemas
+cur.execute("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+tables = [r[0] for r in cur.fetchall()]
 
-# 2) أصناف بدون باركود
-cur.execute("SELECT COUNT(*) as c FROM products WHERE is_active = TRUE AND (barcode IS NULL OR barcode = '')")
-no_bc = cur.fetchone()['c']
-cur.execute("SELECT COUNT(*) as c FROM products WHERE is_active = TRUE AND barcode IS NOT NULL AND barcode != ''")
-with_bc = cur.fetchone()['c']
-print(f"\n🔖 الباركودات:")
-print(f"  أصناف لها باركود: {with_bc}")
-print(f"  أصناف بدون باركود: {no_bc}")
+analysis = {}
+for t in tables:
+    # Column info
+    cur.execute("""
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns 
+        WHERE table_name=%s 
+        ORDER BY ordinal_position
+    """, (t,))
+    cols = [{'name': r[0], 'type': r[1], 'nullable': r[2], 'default': r[3]} for r in cur.fetchall()]
+    
+    # Row count
+    cur.execute(f"SELECT COUNT(*) FROM {t}")
+    count = cur.fetchone()[0]
+    
+    # Foreign keys
+    cur.execute("""
+        SELECT
+            kcu.column_name,
+            ccu.table_name AS foreign_table,
+            ccu.column_name AS foreign_column
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name
+        JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name
+        WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = %s
+    """, (t,))
+    fks = [{'column': r[0], 'ref_table': r[1], 'ref_column': r[2]} for r in cur.fetchall()]
+    
+    analysis[t] = {
+        'columns': cols,
+        'row_count': count,
+        'foreign_keys': fks
+    }
 
-# 3) الوحدات
-cur.execute("SELECT COUNT(*) as c FROM product_barcodes")
-pb_total = cur.fetchone()['c']
-cur.execute("SELECT COUNT(DISTINCT product_id) as c FROM product_barcodes")
-products_with_units = cur.fetchone()['c']
-cur.execute("SELECT COUNT(*) as c FROM products WHERE is_active = TRUE AND id NOT IN (SELECT DISTINCT product_id FROM product_barcodes)")
-products_no_extra = cur.fetchone()['c']
-print(f"\n📏 الوحدات:")
-print(f"  إجمالي الوحدات/الباركودات: {pb_total}")
-print(f"  أصناف لها وحدات إضافية: {products_with_units}")
-print(f"  أصناف بوحدة واحدة فقط: {products_no_extra}")
+# Supplier-related details
+supplier_tables = {}
 
-# 4) الوحدات المستخدمة
-cur.execute("SELECT unit, COUNT(*) as c FROM product_barcodes WHERE unit IS NOT NULL GROUP BY unit ORDER BY c DESC")
-print(f"\n📊 الوحدات المستخدمة:")
-for r in cur.fetchall():
-    print(f"  {r['unit']}: {r['c']}")
+# supplier_products schema + sample
+if 'supplier_products' in analysis:
+    cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='supplier_products' ORDER BY ordinal_position")
+    supplier_tables['supplier_products_schema'] = cur.fetchall()
 
-# 5) الأقسام
-cur.execute("""
-    SELECT c.name, COUNT(p.id) as cnt 
-    FROM categories c 
-    LEFT JOIN products p ON p.category_id = c.id AND p.is_active = TRUE 
-    GROUP BY c.id, c.name 
-    ORDER BY cnt DESC
-""")
-print(f"\n📂 الأقسام:")
-for r in cur.fetchall():
-    print(f"  {r['name']}: {r['cnt']} صنف")
+# sorting_rules schema
+if 'sorting_rules' in analysis:
+    cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='sorting_rules' ORDER BY ordinal_position")
+    supplier_tables['sorting_rules_schema'] = cur.fetchall()
 
-# 6) أصناف بدون قسم
-cur.execute("SELECT COUNT(*) as c FROM products WHERE is_active = TRUE AND category_id IS NULL")
-no_cat = cur.fetchone()['c']
-print(f"\n  أصناف بدون قسم: {no_cat}")
+# supplier_invoices schema
+cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='supplier_invoices' ORDER BY ordinal_position")
+supplier_tables['supplier_invoices_schema'] = cur.fetchall()
 
-# 7) أصناف مكررة (نفس الاسم)
-cur.execute("""
-    SELECT name, COUNT(*) as c 
-    FROM products 
-    WHERE is_active = TRUE 
-    GROUP BY name 
-    HAVING COUNT(*) > 1 
-    ORDER BY c DESC 
-    LIMIT 10
-""")
-dups = cur.fetchall()
-print(f"\n⚠️ أصناف مكررة (نفس الاسم):")
-if dups:
-    for r in dups:
-        print(f"  {r['name']}: {r['c']} مرات")
-else:
-    print("  لا يوجد مكررات")
+# supplier_invoice_items schema
+cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='supplier_invoice_items' ORDER BY ordinal_position")
+supplier_tables['supplier_invoice_items_schema'] = cur.fetchall()
 
-# 8) أصناف بدون أسعار
-cur.execute("SELECT COUNT(*) as c FROM products WHERE is_active = TRUE AND (cost_price IS NULL OR cost_price = 0)")
-no_cost = cur.fetchone()['c']
-cur.execute("SELECT COUNT(*) as c FROM products WHERE is_active = TRUE AND (sell_price IS NULL OR sell_price = 0)")
-no_sell = cur.fetchone()['c']
-print(f"\n💰 الأسعار:")
-print(f"  بدون سعر تكلفة: {no_cost}")
-print(f"  بدون سعر بيع: {no_sell}")
+# agent_invoices schema
+cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='agent_invoices' ORDER BY ordinal_position")
+supplier_tables['agent_invoices_schema'] = cur.fetchall()
 
-# 9) المستخدمين
-cur.execute("SELECT COUNT(*) as c FROM users WHERE is_active = TRUE")
-print(f"\n👥 المستخدمين: {cur.fetchone()['c']}")
+# agent_invoice_items schema
+cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='agent_invoice_items' ORDER BY ordinal_position")
+supplier_tables['agent_invoice_items_schema'] = cur.fetchall()
 
-# 10) الموردين
-cur.execute("SELECT COUNT(*) as c FROM suppliers")
-print(f"🏭 الموردين: {cur.fetchone()['c']}")
+# warehouses if exists
+try:
+    cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='warehouses' ORDER BY ordinal_position")
+    supplier_tables['warehouses_schema'] = cur.fetchall()
+except:
+    pass
 
-# 11) Units table
-cur.execute("SELECT COUNT(*) as c FROM units WHERE is_active = TRUE")
-print(f"📏 وحدات القياس: {cur.fetchone()['c']}")
+# inventory_movements schema
+cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='inventory_movements' ORDER BY ordinal_position")
+supplier_tables['inventory_movements_schema'] = cur.fetchall()
 
-print("\n" + "=" * 60)
-print("انتهى التحليل")
-print("=" * 60)
+# products relevant columns
+cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='products' ORDER BY ordinal_position")
+supplier_tables['products_schema'] = cur.fetchall()
+
+result = {
+    'table_summary': {t: {'rows': analysis[t]['row_count'], 'cols': len(analysis[t]['columns'])} for t in tables},
+    'supplier_related': supplier_tables,
+    'full_analysis': analysis
+}
+
+with open('D:/supermarket-system/web/full_analysis.json', 'w', encoding='utf-8') as f:
+    json.dump(result, f, indent=2, ensure_ascii=False, default=str)
 
 conn.close()

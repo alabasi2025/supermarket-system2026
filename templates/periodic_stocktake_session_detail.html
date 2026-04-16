@@ -65,8 +65,10 @@
             <div class="text-sm text-gray-500">طلب غير موجود</div>
         </div>
         <div class="card p-4 text-center">
-            <div class="text-3xl font-bold text-emerald-600 dark:text-emerald-400" id="statQty">{{ items|sum(attribute='counted_stock') }}</div>
-            <div class="text-sm text-gray-500">إجمالي الكميات</div>
+            <div class="text-3xl font-bold text-emerald-600 dark:text-emerald-400" id="statQty">
+                {% set total_base = [] %}{% for item in items %}{% if total_base.append(item.counted_stock * (item.pack_size or 1)) %}{% endif %}{% endfor %}{{ total_base|sum }}
+            </div>
+            <div class="text-sm text-gray-500">إجمالي الكميات (بالحبة)</div>
         </div>
         <div class="card p-4 text-center">
             <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ (items|selectattr('batch_no')|list|length) }}</div>
@@ -75,17 +77,28 @@
     </div>
 
     <!-- تبويبات -->
-    <div class="flex gap-2 border-b-2 border-gray-200 dark:border-gray-700">
-        <button id="tab-items" onclick="switchTab('items')" class="px-5 py-3 font-bold text-sm rounded-t-xl transition-colors bg-indigo-600 text-white -mb-0.5 border-b-2 border-indigo-600">
+    <div id="session-tabs" class="flex gap-2 border-b-2 border-gray-200 dark:border-gray-700" role="tablist" aria-label="تبويبات تفاصيل الجرد الدوري">
+        <button type="button" id="tab-items" data-tab="items" role="tab" aria-controls="section-items" aria-selected="true" tabindex="0" onclick="switchTab('items')" class="px-5 py-3 font-bold text-sm rounded-t-xl transition-colors bg-indigo-600 text-white -mb-0.5 border-b-2 border-indigo-600">
             📦 الأصناف المسجلة <span class="ml-1 px-2 py-0.5 rounded-full bg-white/20 text-xs">{{ items|length }}</span>
         </button>
-        <button id="tab-requests" onclick="switchTab('requests')" class="px-5 py-3 font-bold text-sm rounded-t-xl transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 -mb-0.5">
+        <button type="button" id="tab-requests" data-tab="requests" role="tab" aria-controls="section-requests" aria-selected="false" tabindex="-1" onclick="switchTab('requests')" class="px-5 py-3 font-bold text-sm rounded-t-xl transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 -mb-0.5">
             📝 طلبات غير الموجود <span class="ml-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs">{{ requests|length }}</span>
+        </button>
+        {% if duplicated_products %}
+        <button type="button" id="tab-duplicates" data-tab="duplicates" role="tab" aria-controls="section-duplicates" aria-selected="false" tabindex="-1" onclick="switchTab('duplicates')" class="px-5 py-3 font-bold text-sm rounded-t-xl transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 -mb-0.5">
+            🔄 أصناف متكررة <span class="ml-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs">{{ duplicated_products|length }}</span>
+        </button>
+        {% endif %}
+        <button type="button" id="tab-summary" data-tab="summary" role="tab" aria-controls="section-summary" aria-selected="false" tabindex="-1" onclick="switchTab('summary')" class="px-5 py-3 font-bold text-sm rounded-t-xl transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 -mb-0.5">
+            📊 ملخص تجميعي <span class="ml-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs">{{ aggregated_products|length }}</span>
+        </button>
+        <button type="button" id="tab-coverage" data-tab="coverage" role="tab" aria-controls="section-coverage" aria-selected="false" tabindex="-1" onclick="switchTab('coverage')" class="px-5 py-3 font-bold text-sm rounded-t-xl transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 -mb-0.5">
+            🎯 تغطية الجرد <span class="ml-1 px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 text-xs">{{ inventory_stats.inventoried }}/{{ inventory_stats.total }}</span>
         </button>
     </div>
 
     <!-- عناصر الجرد -->
-    <div id="section-items" class="card overflow-hidden">
+    <div id="section-items" class="card overflow-hidden" role="tabpanel" aria-labelledby="tab-items">
         <div class="p-4 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-indigo-500 to-purple-500 text-white flex items-center justify-between">
             <h3 class="text-lg font-bold">📦 الأصناف المسجلة ({{ items|length }})</h3>
             <div class="flex items-center gap-2">
@@ -119,14 +132,19 @@
                         data-expiry="{{ item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '9999-12-31' }}"
                         data-unit="{{ item.display_unit_name or '' }}"
                         data-shelf="{{ item.shelf_name or '' }}"
-                        data-qty="{{ item.counted_stock }}">
+                        data-qty="{{ item.counted_stock * (item.pack_size or 1) }}">
                         <td class="py-3 px-4 font-mono text-gray-400">{{ loop.index }}</td>
                         <td class="py-3 px-4 font-bold text-gray-800 dark:text-gray-100">{{ item.product_name or item.product_name_db }}</td>
                         <td class="py-3 px-4 font-mono text-gray-500 text-xs">{{ item.barcode }}</td>
                         <td class="py-3 px-4"><span class="px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs font-bold">{{ item.display_unit_name or '-' }}</span></td>
                         <td class="py-3 px-4"><span class="px-2 py-1 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-bold">{{ item.shelf_name or '-' }}</span></td>
                         <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ item.selected_unit or item.unit or '-' }}</td>
-                        <td class="py-3 px-4 font-bold text-indigo-600 dark:text-indigo-400">{{ item.counted_stock }}</td>
+                        <td class="py-3 px-4 font-bold text-indigo-600 dark:text-indigo-400">
+                            {{ item.counted_stock }} {{ item.selected_unit or item.unit or '' }}
+                            {% if item.pack_size and item.pack_size > 1 %}
+                            <span class="text-xs text-gray-400 font-normal">(= {{ item.counted_stock * item.pack_size }} حبة)</span>
+                            {% endif %}
+                        </td>
                         <td class="py-3 px-4 text-gray-500">{{ item.production_date.strftime('%Y-%m-%d') if item.production_date else '-' }}</td>
                         <td class="py-3 px-4 text-gray-500">{{ item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '-' }}</td>
                         <td class="py-3 px-4">
@@ -154,7 +172,7 @@
     </div>
 
     <!-- طلبات الأصناف غير الموجودة -->
-    <div id="section-requests" class="card overflow-hidden hidden">
+    <div id="section-requests" class="card overflow-hidden hidden" role="tabpanel" aria-labelledby="tab-requests">
         <div class="p-4 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-amber-500 to-orange-500 text-white flex items-center justify-between">
             <h3 class="text-lg font-bold">📝 طلبات الأصناف غير الموجودة ({{ requests|length }})</h3>
             <div class="flex items-center gap-2">
@@ -220,6 +238,213 @@
                     {% else %}
                     <tr>
                         <td colspan="11" class="py-8 text-center text-gray-400">لا توجد طلبات</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- أصناف متكررة عبر الرفوف -->
+    {% if duplicated_products %}
+    <div id="section-duplicates" class="card overflow-hidden hidden" role="tabpanel" aria-labelledby="tab-duplicates">
+        <div class="p-4 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-red-500 to-orange-500 text-white">
+            <h3 class="text-lg font-bold">🔄 أصناف متكررة عبر الرفوف ({{ duplicated_products|length }})</h3>
+            <p class="text-sm text-white/80 mt-1">أصناف موجودة في أكثر من رف — مفيد لمعرفة توزيع المنتجات</p>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-800">
+            {% for dp in duplicated_products %}
+            <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                <div class="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                        <div class="font-bold text-gray-800 dark:text-gray-100">{{ dp.product_name }}</div>
+                        <div class="text-xs font-mono text-gray-400">{{ dp.barcode }}</div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">{{ dp.locations_count }} موقع</span>
+                        <span class="px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">إجمالي: {{ dp.total_base_qty }} حبة</span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {% for loc in dp.locations %}
+                    <div class="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="px-2 py-0.5 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs font-bold">📍 {{ loc.display_unit_name }}</span>
+                            <span class="px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-bold">🗂️ {{ loc.shelf_name }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-xs text-gray-500 mt-1">
+                            <span>كمية: <strong class="text-gray-800 dark:text-gray-200">{{ loc.counted_stock }} {{ loc.unit or '' }}</strong>{% if loc.pack_size and loc.pack_size > 1 %} <span class="text-gray-400">(={{ loc.counted_stock * loc.pack_size }} حبة)</span>{% endif %}</span>
+                            <span>📅 {{ loc.production_date }} ← {{ loc.expiry_date }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ملخص تجميعي -->
+    <div id="section-summary" class="card overflow-hidden hidden" role="tabpanel" aria-labelledby="tab-summary">
+        <div class="p-4 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-emerald-500 to-teal-500 text-white flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-bold">📊 ملخص تجميعي ({{ aggregated_products|length }} صنف)</h3>
+                <p class="text-sm text-white/80 mt-1">إجمالي كل صنف من جميع الرفوف — محسوب بالحبة</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="text" id="summarySearch" oninput="filterSummary()" placeholder="🔍 بحث..." class="px-3 py-1.5 rounded-lg bg-white/20 text-white placeholder-white/60 text-sm border-0 focus:bg-white/30 focus:outline-none w-40">
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm" id="summaryTable">
+                <thead>
+                    <tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">#</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الصنف</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الباركود</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">القسم</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">📍 المواقع</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400 cursor-pointer" onclick="sortSummary('qty')">📦 الإجمالي (حبة) ↕</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">التوزيع</th>
+                    </tr>
+                </thead>
+                <tbody id="summaryBody">
+                    {% for ap in aggregated_products %}
+                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors summary-row"
+                        data-name="{{ ap.product_name }}" data-qty="{{ ap.total_base_qty }}">
+                        <td class="py-3 px-4 font-mono text-gray-400">{{ loop.index }}</td>
+                        <td class="py-3 px-4 font-bold text-gray-800 dark:text-gray-100">{{ ap.product_name }}</td>
+                        <td class="py-3 px-4 font-mono text-gray-500 text-xs">{{ ap.barcode }}</td>
+                        <td class="py-3 px-4 text-gray-500 text-sm">{{ ap.category_name or '-' }}</td>
+                        <td class="py-3 px-4">
+                            {% if ap.locations_count > 1 %}
+                            <span class="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">{{ ap.locations_count }} رف</span>
+                            {% else %}
+                            <span class="px-2 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">1 رف</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3 px-4 font-bold text-lg text-emerald-600 dark:text-emerald-400">{{ ap.total_base_qty }}</td>
+                        <td class="py-3 px-4">
+                            <div class="flex flex-wrap gap-1">
+                                {% for loc in ap.locations %}
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs">
+                                    <span class="text-violet-600 dark:text-violet-400 font-bold">{{ loc.display_unit_name }}</span>
+                                    <span class="text-gray-400">›</span>
+                                    <span class="text-blue-600 dark:text-blue-400">{{ loc.shelf_name }}</span>
+                                    <span class="text-gray-400">:</span>
+                                    <span class="font-bold">{{ loc.base_qty }}</span>
+                                </span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- تغطية الجرد -->
+    <div id="section-coverage" class="card overflow-hidden hidden" role="tabpanel" aria-labelledby="tab-coverage">
+        <div class="p-4 border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-cyan-500 to-blue-500 text-white">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <h3 class="text-lg font-bold">🎯 تغطية الجرد</h3>
+                    <p class="text-sm text-white/80 mt-1">كل أصناف النظام مع حالة الجرد والأسعار</p>
+                </div>
+            </div>
+            <!-- شريط التقدم -->
+            {% set pct = (inventory_stats.inventoried / inventory_stats.total * 100) if inventory_stats.total > 0 else 0 %}
+            <div class="w-full bg-white/20 rounded-full h-4 mb-2">
+                <div class="h-4 rounded-full transition-all duration-500 {% if pct >= 80 %}bg-emerald-400{% elif pct >= 50 %}bg-yellow-400{% else %}bg-red-400{% endif %}" style="width: {{ pct|round(1) }}%"></div>
+            </div>
+            <div class="flex justify-between text-sm text-white/90">
+                <span>تم جرد {{ inventory_stats.inventoried }} من {{ inventory_stats.total }} صنف</span>
+                <span class="font-bold">{{ pct|round(1) }}%</span>
+            </div>
+        </div>
+        <!-- فلاتر -->
+        <div class="p-3 border-b border-gray-100 dark:border-gray-800 flex gap-2 flex-wrap items-center">
+            <button onclick="filterCoverageStatus('all')" id="cov-all" class="px-4 py-2 rounded-xl text-sm font-bold bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors ring-2 ring-offset-2 ring-indigo-500">
+                الكل <span class="text-xs">({{ inventory_stats.total }})</span>
+            </button>
+            <button onclick="filterCoverageStatus('yes')" id="cov-yes" class="px-4 py-2 rounded-xl text-sm font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 transition-colors">
+                ✅ تم جرده <span class="text-xs">({{ inventory_stats.inventoried }})</span>
+            </button>
+            <button onclick="filterCoverageStatus('no')" id="cov-no" class="px-4 py-2 rounded-xl text-sm font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 transition-colors">
+                ❌ لم يتم جرده <span class="text-xs">({{ inventory_stats.not_inventoried }})</span>
+            </button>
+            <div class="h-6 w-px bg-gray-300 dark:bg-gray-600 mx-1"></div>
+            <select id="coverageCategory" onchange="filterCoverage()" class="px-3 py-2 rounded-xl text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                <option value="">كل الأقسام</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}">{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" id="coverageSearch" oninput="filterCoverage()" placeholder="🔍 بحث بالاسم أو الباركود..." class="px-3 py-2 rounded-xl text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 w-56">
+            <span id="covVisibleCount" class="text-xs text-gray-500 mr-auto"></span>
+        </div>
+        <div class="overflow-x-auto" style="max-height: 600px; overflow-y: auto;">
+            <table class="w-full text-sm">
+                <thead class="sticky top-0 z-10">
+                    <tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">#</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">كود</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">اسم الصنف</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">الماركة</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">الباركود</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">القسم</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">الوحدة</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">💰 التكلفة</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">💵 البيع</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">📦 المخزون</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">الحد الأدنى</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">حالة الجرد</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">كمية الجرد</th>
+                        <th class="text-right py-3 px-3 font-semibold text-gray-600 dark:text-gray-400 text-xs">الفرق</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in all_products_status %}
+                    <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors coverage-row {% if not p.is_inventoried %}bg-red-50/30 dark:bg-red-900/5{% endif %}"
+                        data-status="{{ 'yes' if p.is_inventoried else 'no' }}"
+                        data-name="{{ p.name }}" data-barcode="{{ p.barcode }}" data-cat="{{ p.category_id }}">
+                        <td class="py-2 px-3 font-mono text-gray-400 text-xs">{{ loop.index }}</td>
+                        <td class="py-2 px-3 font-mono text-gray-500 text-xs">{{ p.product_code }}</td>
+                        <td class="py-2 px-3 font-bold text-sm {% if p.is_inventoried %}text-gray-800 dark:text-gray-100{% else %}text-gray-400 dark:text-gray-500{% endif %}">{{ p.name }}</td>
+                        <td class="py-2 px-3 text-gray-500 text-xs">{{ p.brand }}</td>
+                        <td class="py-2 px-3 font-mono text-gray-500 text-xs">{{ p.barcode }}</td>
+                        <td class="py-2 px-3 text-xs"><span class="px-2 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">{{ p.category_name }}</span></td>
+                        <td class="py-2 px-3 text-gray-500 text-xs">{{ p.unit }}</td>
+                        <td class="py-2 px-3 text-sm font-mono text-orange-600 dark:text-orange-400">{{ '{:,.0f}'.format(p.cost_price) if p.cost_price else '-' }}</td>
+                        <td class="py-2 px-3 text-sm font-mono text-emerald-600 dark:text-emerald-400 font-bold">{{ '{:,.0f}'.format(p.sell_price) if p.sell_price else '-' }}</td>
+                        <td class="py-2 px-3 text-sm font-mono {% if p.current_stock <= p.min_stock %}text-red-600 font-bold{% else %}text-gray-600{% endif %}">{{ '{:,.0f}'.format(p.current_stock) if p.current_stock else '0' }}</td>
+                        <td class="py-2 px-3 text-xs text-gray-400">{{ p.min_stock or '-' }}</td>
+                        <td class="py-2 px-3">
+                            {% if p.is_inventoried %}
+                            <span class="px-2 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">✅ تم</span>
+                            {% else %}
+                            <span class="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">❌ لا</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 px-3 font-bold text-sm {% if p.is_inventoried %}text-indigo-600{% else %}text-gray-300{% endif %}">
+                            {{ p.agg.total_base_qty if p.agg else '-' }}
+                        </td>
+                        <td class="py-2 px-3 text-sm font-bold">
+                            {% if p.agg %}
+                                {% set diff = p.agg.total_base_qty - (p.current_stock|int) %}
+                                {% if diff > 0 %}
+                                <span class="text-emerald-600">+{{ diff }}</span>
+                                {% elif diff < 0 %}
+                                <span class="text-red-600">{{ diff }}</span>
+                                {% else %}
+                                <span class="text-gray-400">0</span>
+                                {% endif %}
+                            {% else %}
+                            <span class="text-gray-300">-</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -344,29 +569,148 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-function switchTab(tab) {
+function getAvailableTabs() {
+    return Array.from(document.querySelectorAll('#session-tabs [data-tab]'));
+}
+
+function switchTab(tab, opts = {}) {
+    const { focusActive = false } = opts;
+    const availableTabs = getAvailableTabs();
+    const allowed = availableTabs.map(btn => btn.dataset.tab);
+    const targetTab = allowed.includes(tab) ? tab : (allowed[0] || 'items');
+
     // sections
-    document.getElementById('section-items').classList.toggle('hidden', tab !== 'items');
-    document.getElementById('section-requests').classList.toggle('hidden', tab !== 'requests');
+    document.getElementById('section-items')?.classList.toggle('hidden', targetTab !== 'items');
+    document.getElementById('section-requests')?.classList.toggle('hidden', targetTab !== 'requests');
+    const dupSection = document.getElementById('section-duplicates');
+    if (dupSection) dupSection.classList.toggle('hidden', targetTab !== 'duplicates');
+    const sumSection = document.getElementById('section-summary');
+    if (sumSection) sumSection.classList.toggle('hidden', targetTab !== 'summary');
+    const covSection = document.getElementById('section-coverage');
+    if (covSection) covSection.classList.toggle('hidden', targetTab !== 'coverage');
     
     // tabs
     const activeClass = ['bg-indigo-600', 'text-white', 'border-b-2', 'border-indigo-600'];
     const inactiveClass = ['text-gray-600', 'dark:text-gray-400', 'hover:bg-gray-100', 'dark:hover:bg-gray-800'];
     
-    const itemsBtn = document.getElementById('tab-items');
-    const reqBtn = document.getElementById('tab-requests');
-    
-    if (tab === 'items') {
-        activeClass.forEach(c => itemsBtn.classList.add(c));
-        inactiveClass.forEach(c => itemsBtn.classList.remove(c));
-        inactiveClass.forEach(c => reqBtn.classList.add(c));
-        activeClass.forEach(c => reqBtn.classList.remove(c));
-    } else {
-        activeClass.forEach(c => reqBtn.classList.add(c));
-        inactiveClass.forEach(c => reqBtn.classList.remove(c));
-        inactiveClass.forEach(c => itemsBtn.classList.add(c));
-        activeClass.forEach(c => itemsBtn.classList.remove(c));
-    }
+    availableTabs.forEach(btn => {
+        const isActive = btn.dataset.tab === targetTab;
+        if (isActive) {
+            activeClass.forEach(c => btn.classList.add(c));
+            inactiveClass.forEach(c => btn.classList.remove(c));
+            btn.setAttribute('aria-selected', 'true');
+            btn.setAttribute('tabindex', '0');
+            if (focusActive) btn.focus();
+        } else {
+            inactiveClass.forEach(c => btn.classList.add(c));
+            activeClass.forEach(c => btn.classList.remove(c));
+            btn.setAttribute('aria-selected', 'false');
+            btn.setAttribute('tabindex', '-1');
+        }
+    });
+}
+
+function initTabsNavigation() {
+    const tabList = document.getElementById('session-tabs');
+    if (!tabList) return;
+
+    tabList.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-tab]');
+        if (!btn) return;
+        switchTab(btn.dataset.tab);
+    });
+
+    tabList.addEventListener('keydown', (e) => {
+        const availableTabs = getAvailableTabs();
+        if (!availableTabs.length) return;
+        const activeIndex = availableTabs.findIndex(btn => btn.getAttribute('aria-selected') === 'true');
+        const currentIndex = activeIndex >= 0 ? activeIndex : 0;
+
+        let nextIndex = currentIndex;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextIndex = (currentIndex + 1) % availableTabs.length;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') nextIndex = (currentIndex - 1 + availableTabs.length) % availableTabs.length;
+        if (e.key === 'Home') nextIndex = 0;
+        if (e.key === 'End') nextIndex = availableTabs.length - 1;
+
+        if (nextIndex !== currentIndex) {
+            e.preventDefault();
+            switchTab(availableTabs[nextIndex].dataset.tab, { focusActive: true });
+            return;
+        }
+
+        if (e.key === 'Enter' || e.key === ' ') {
+            const focused = document.activeElement?.closest?.('[data-tab]');
+            if (focused) {
+                e.preventDefault();
+                switchTab(focused.dataset.tab);
+            }
+        }
+    });
+
+    const initialTab = getAvailableTabs()[0]?.dataset?.tab || 'items';
+    switchTab(initialTab);
+}
+
+document.addEventListener('DOMContentLoaded', initTabsNavigation);
+
+// فلتر تغطية الجرد
+let currentCovFilter = 'all';
+function filterCoverageStatus(status) {
+    currentCovFilter = status;
+    filterCoverage();
+    // تحديث أزرار الفلتر
+    ['all','yes','no'].forEach(s => {
+        const btn = document.getElementById('cov-' + s);
+        if (!btn) return;
+        if (s === status) {
+            btn.classList.add('ring-2', 'ring-offset-2', 'ring-indigo-500');
+        } else {
+            btn.classList.remove('ring-2', 'ring-offset-2', 'ring-indigo-500');
+        }
+    });
+}
+function filterCoverage() {
+    const q = (document.getElementById('coverageSearch').value || '').trim().toLowerCase();
+    const catId = document.getElementById('coverageCategory').value;
+    let visible = 0;
+    document.querySelectorAll('.coverage-row').forEach(r => {
+        const matchStatus = currentCovFilter === 'all' || r.dataset.status === currentCovFilter;
+        const name = (r.dataset.name || '').toLowerCase();
+        const barcode = (r.dataset.barcode || '').toLowerCase();
+        const matchSearch = !q || name.includes(q) || barcode.includes(q);
+        const matchCat = !catId || r.dataset.cat === catId;
+        const show = matchStatus && matchSearch && matchCat;
+        r.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    document.getElementById('covVisibleCount').textContent = 'يظهر ' + visible + ' صنف';
+}
+
+// بحث في الملخص التجميعي
+function filterSummary() {
+    const q = (document.getElementById('summarySearch').value || '').trim().toLowerCase();
+    document.querySelectorAll('.summary-row').forEach(r => {
+        const name = (r.dataset.name || '').toLowerCase();
+        r.style.display = (!q || name.includes(q)) ? '' : 'none';
+    });
+}
+
+// فرز الملخص حسب الكمية
+let summarySort = 'desc';
+function sortSummary(by) {
+    const tbody = document.getElementById('summaryBody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('.summary-row'));
+    summarySort = summarySort === 'desc' ? 'asc' : 'desc';
+    rows.sort((a, b) => {
+        const qa = parseInt(a.dataset.qty) || 0;
+        const qb = parseInt(b.dataset.qty) || 0;
+        return summarySort === 'asc' ? qa - qb : qb - qa;
+    });
+    rows.forEach((r, i) => {
+        tbody.appendChild(r);
+        r.querySelector('td:first-child').textContent = i + 1;
+    });
 }
 
 // فلتر حسب وحدة العرض والرف

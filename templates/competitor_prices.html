@@ -147,7 +147,7 @@ async function saveCompetitor(e) {
     const address = document.getElementById('competitorAddress').value;
     
     if (!name) {
-        alert('يرجى إدخال اسم المنافس');
+        showToast('\', 'error', 4000);
         return;
     }
     
@@ -165,7 +165,7 @@ async function saveCompetitor(e) {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -179,7 +179,7 @@ async function saveCompetitorPrice(e) {
     };
     
     if (!data.competitor_id || !data.product_id || !data.price) {
-        alert('يرجى ملء جميع الحقول');
+        showToast('\', 'error', 4000);
         return;
     }
     
@@ -197,9 +197,11 @@ async function saveCompetitorPrice(e) {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 </script>
 {% endblock %}
+
+
 

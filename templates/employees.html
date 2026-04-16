@@ -222,7 +222,7 @@ async function saveEmployee() {
     };
     
     if (!data.name) {
-        alert('يرجى إدخال اسم الموظف');
+        showToast('\', 'error', 4000);
         return;
     }
     
@@ -242,7 +242,7 @@ async function saveEmployee() {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -262,7 +262,7 @@ async function editEmployee(id) {
             document.getElementById('employeeModal').classList.add('flex');
         }
     } catch (error) {
-        alert('حدث خطأ في جلب البيانات');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -278,8 +278,10 @@ async function deleteEmployee(id) {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الحذف');
+        showToast('\', 'error', 4000);
     }
 }
 </script>
 {% endblock %}
+
+

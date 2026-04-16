@@ -286,7 +286,7 @@ async function saveUser(e) {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -305,13 +305,13 @@ async function resetPassword(e) {
         
         const result = await response.json();
         if (result.success) {
-            alert('تم تغيير كلمة المرور');
+            showToast('\', 'error', 4000);
             closeResetPasswordModal();
         } else {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -327,9 +327,11 @@ async function deleteUser(id, name) {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 </script>
 {% endblock %}
+
+
 

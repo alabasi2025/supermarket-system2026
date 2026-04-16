@@ -71,7 +71,7 @@
                         <td class="px-6 py-4 text-sm text-gray-600">{{ category.sort_order }}</td>
                         <td class="px-6 py-4">
                             <div class="flex items-center justify-center gap-2">
-                                <button onclick="openEditModal({{ category.id }}, '{{ category.name }}', '{{ category.parent_id or '' }}', {{ category.sort_order }})"
+                                <button onclick="openEditModal({{ category.id }}, '{{ category.name }}', '{{ category.parent_id or '' }}', {{ category.sort_order }}, '{{ category.description or '' }}', {{ 'true' if category.is_active != False else 'false' }})"
                                         class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="تعديل">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -119,6 +119,7 @@
             </div>
             <form id="categoryForm" onsubmit="saveCategory(event)" class="p-6 space-y-4">
                 <input type="hidden" id="categoryId" value="">
+                <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
                 
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">اسم القسم *</label>
@@ -142,10 +143,23 @@
                 </div>
                 
                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">الوصف (اختياري)</label>
+                    <textarea id="categoryDescription" rows="2"
+                              class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              placeholder="وصف مختصر للقسم..."></textarea>
+                </div>
+
+                <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">الترتيب</label>
                     <input type="number" id="categorySortOrder" min="0" value="0"
                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                     <p class="text-xs text-gray-500 mt-1">رقم أصغر = يظهر أولاً</p>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" id="categoryActive" checked
+                           class="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                    <label for="categoryActive" class="text-sm font-medium text-gray-700">القسم نشط</label>
                 </div>
                 
                 <div class="flex gap-3 pt-4">
@@ -170,15 +184,19 @@ function openAddModal() {
     document.getElementById('categoryName').value = '';
     document.getElementById('categoryParent').value = '';
     document.getElementById('categorySortOrder').value = '0';
+    document.getElementById('categoryDescription').value = '';
+    document.getElementById('categoryActive').checked = true;
     document.getElementById('categoryModal').classList.remove('hidden');
 }
 
-function openEditModal(id, name, parentId, sortOrder) {
+function openEditModal(id, name, parentId, sortOrder, description, isActive) {
     document.getElementById('modalTitle').textContent = 'تعديل القسم';
     document.getElementById('categoryId').value = id;
     document.getElementById('categoryName').value = name;
     document.getElementById('categoryParent').value = parentId;
     document.getElementById('categorySortOrder').value = sortOrder;
+    document.getElementById('categoryDescription').value = description || '';
+    document.getElementById('categoryActive').checked = isActive !== false;
     document.getElementById('categoryModal').classList.remove('hidden');
 }
 
@@ -194,15 +212,17 @@ async function saveCategory(e) {
         name: document.getElementById('categoryName').value,
         parent_id: document.getElementById('categoryParent').value || null,
         sort_order: parseInt(document.getElementById('categorySortOrder').value) || 0,
+        description: document.getElementById('categoryDescription').value || '',
+        is_active: document.getElementById('categoryActive').checked,
     };
     
     const url = id ? `/api/categories/${id}` : '/api/categories';
     const method = id ? 'PUT' : 'POST';
     
     try {
-        const response = await fetch(url, {
+        const response = await safeFetch(url, {
             method: method,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.getElementById('csrfToken').value },
             body: JSON.stringify(data)
         });
         
@@ -213,7 +233,7 @@ async function saveCategory(e) {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -221,7 +241,7 @@ async function deleteCategory(id, name) {
     if (!confirm(`هل أنت متأكد من حذف "${name}"؟`)) return;
     
     try {
-        const response = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+        const response = await safeFetch(`/api/categories/${id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': document.getElementById('csrfToken').value } });
         const result = await response.json();
         if (result.success) {
             location.reload();
@@ -229,9 +249,11 @@ async function deleteCategory(id, name) {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 </script>
 {% endblock %}
+
+
 

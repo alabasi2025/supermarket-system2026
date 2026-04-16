@@ -341,7 +341,7 @@ async function saveBatch() {
     };
     
     if (!data.product_id || !data.expiry_date) {
-        alert('يرجى ملء الحقول المطلوبة');
+        showToast('\', 'error', 4000);
         return;
     }
     
@@ -362,7 +362,7 @@ async function saveBatch() {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الحفظ');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -385,7 +385,7 @@ async function editBatch(id) {
         document.getElementById('batchModal').classList.remove('hidden');
         document.getElementById('batchModal').classList.add('flex');
     } catch (error) {
-        alert('حدث خطأ في جلب البيانات');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -402,7 +402,7 @@ async function deleteBatch(id) {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الحذف');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -421,9 +421,11 @@ async function markAsReturned(id) {
             location.reload();
         }
     } catch (error) {
-        alert('حدث خطأ');
+        showToast('\', 'error', 4000);
     }
 }
 </script>
 {% endblock %}
+
+
 

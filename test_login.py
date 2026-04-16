@@ -1,30 +1,30 @@
-# -*- coding: utf-8 -*-
-import requests, urllib3
+import requests, urllib3, re
 urllib3.disable_warnings()
 
-base = 'https://localhost:5555'
 s = requests.Session()
 s.verify = False
+BASE = 'https://localhost:5555'
 
-print('1. POST login...')
-r = s.post(base + '/login', data={'username': '1', 'password': 'admin'}, allow_redirects=False)
-loc = r.headers.get('Location', 'none')
-print(f'   Status: {r.status_code}, Location: {loc}')
-print(f'   Cookies: {dict(s.cookies)}')
+# Get CSRF
+r = s.get(BASE + '/login', timeout=10)
+m = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', r.text)
+csrf = m.group(1) if m else 'NONE'
 
-if r.status_code in (301, 302):
-    print('2. Follow redirect...')
-    r2 = s.get(base + loc, allow_redirects=False)
-    loc2 = r2.headers.get('Location', 'none')
-    print(f'   Status: {r2.status_code}, Location: {loc2}')
-    print(f'   Cookies: {dict(s.cookies)}')
-
-    if r2.status_code in (301, 302):
-        print('3. Follow 2nd redirect...')
-        r3 = s.get(base + loc2, allow_redirects=False)
-        print(f'   Status: {r3.status_code}')
-
-print('\n4. Direct dashboard test...')
-r4 = s.get(base + '/dashboard', allow_redirects=False)
-loc4 = r4.headers.get('Location', 'none')
-print(f'   Status: {r4.status_code}, Location: {loc4}')
+# Try login with different passwords
+for pwd in ['admin', '1234', '123456']:
+    s2 = requests.Session()
+    s2.verify = False
+    r2 = s2.get(BASE + '/login', timeout=10)
+    m2 = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', r2.text)
+    csrf2 = m2.group(1) if m2 else ''
+    
+    r2 = s2.post(BASE + '/login', data={
+        'csrf_token': csrf2,
+        'username': '1',
+        'password': pwd,
+        'next': ''
+    }, allow_redirects=False, timeout=10)
+    
+    success = r2.status_code == 302
+    loc = r2.headers.get('Location', 'none')
+    print(f"user=1 pwd={pwd}: status={r2.status_code} redirect={loc} {'OK' if success else 'FAIL'}")

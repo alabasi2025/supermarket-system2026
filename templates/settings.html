@@ -150,12 +150,12 @@ async function saveSettings(e) {
         
         const result = await response.json();
         if (result.success) {
-            alert('تم حفظ الإعدادات بنجاح ✅');
+            showToast('\', 'error', 4000);
         } else {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 
@@ -170,9 +170,11 @@ async function createBackup() {
             alert(result.message || 'حدث خطأ');
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        showToast('\', 'error', 4000);
     }
 }
 </script>
 {% endblock %}
+
+
 
