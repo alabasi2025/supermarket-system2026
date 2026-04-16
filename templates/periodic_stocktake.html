@@ -5,17 +5,35 @@
 {% block page_subtitle %}جرد دوري منتظم للتحقق من المخزون والصلاحية{% endblock %}
 
 {% block header_actions %}
-<a href="/products" class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
+<a href="/display-units" class="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
     </svg>
-    <span>الأصناف</span>
+    <span>وحدات العرض</span>
+</a>
+<a href="/products?open=add&return_to=/periodic-stocktake" onclick="openDirectAddProduct(event)" class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    <span>إضافة صنف مباشرة</span>
 </a>
 {% endblock %}
 
 {% block content %}
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+<style>
+/* منع أسهم الزيادة/النقصان في حقول الكمية */
+input[type="number"].qty-no-spinner::-webkit-outer-spin-button,
+input[type="number"].qty-no-spinner::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type="number"].qty-no-spinner {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+</style>
 
 <div class="max-w-6xl mx-auto space-y-6">
     <div class="card p-6">
@@ -70,6 +88,15 @@
                     </span>
                 </div>
                 <p id="locationWarning" class="text-sm text-amber-600 dark:text-amber-400 hidden">⚠️ يجب اختيار وحدة العرض والرف قبل بدء المسح</p>
+                <p id="shelfClosedWarning" class="text-sm text-red-600 dark:text-red-400 hidden">🔒 هذا الرف مغلق وتم اعتماد جرده. لا يمكن تنفيذ عمليات جديدة عليه.</p>
+                <div class="flex justify-end">
+                    <button id="closeShelfBtn" type="button" onclick="closeCurrentShelf()" class="hidden px-4 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 text-sm font-bold transition-colors">
+                        🔒 إغلاق الرف بعد اكتمال الجرد
+                    </button>
+                    <button id="unlockShelfBtn" type="button" onclick="unlockCurrentShelf()" class="hidden px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-bold transition-colors">
+                        🔓 فتح قفل الرف
+                    </button>
+                </div>
             </div>
 
             <div class="card p-6 space-y-4">
@@ -108,6 +135,14 @@
                     <h3 class="text-lg font-bold text-emerald-700 dark:text-emerald-300">✅ الصنف موجود</h3>
                     <p class="text-sm text-emerald-600 dark:text-emerald-400 mt-1">سجل بيانات الجرد الأولي للصنف الموجود.</p>
                 </div>
+                <!-- تنبيه مجرود مسبقاً -->
+                <div id="alreadyScannedAlert" class="hidden p-4 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-xl">⚠️</span>
+                        <span class="font-bold text-amber-700 dark:text-amber-300">هذا الصنف مجرود مسبقاً!</span>
+                    </div>
+                    <div id="alreadyScannedDetails" class="space-y-1 text-sm text-amber-600 dark:text-amber-400"></div>
+                </div>
                 <div class="p-6 space-y-4">
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div><p class="text-xs text-gray-500">اسم الصنف</p><p id="foundName" class="font-bold text-gray-800 dark:text-gray-100"></p></div>
@@ -139,7 +174,7 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الكمية</label>
-                            <input type="number" id="existingQuantity" name="counted_stock" value="1" min="1" step="1" class="form-input" oninput="this.value=Math.floor(Math.abs(this.value))||1;calcBaseQty()">
+                            <input type="number" id="existingQuantity" name="counted_stock" value="1" min="1" step="1" data-autoselect="1" data-no-wheel="1" class="form-input qty-no-spinner" onfocus="this.select()" onclick="this.select()" onwheel="this.blur()" oninput="this.value=Math.floor(Math.abs(this.value))||1;calcBaseQty()">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">العبوة / Pack Size</label>
@@ -160,6 +195,12 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الانتهاء <span class="text-red-500">*</span></label>
                             <input type="text" id="existingExpiryDate" name="expiry_date" class="form-input font-mono text-center date-field" dir="ltr" placeholder="31-12-2026 أو 2026-12-31" maxlength="10" onblur="parseDateField(this)" onkeydown="dateKeyHandler(event, this)" required>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                                <input type="checkbox" id="existingNoExpiryDates" name="no_expiry_dates" value="1" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" onchange="toggleExistingNoExpiry()">
+                                <span>بدون تاريخ انتهاء (الصنف غير مرتبط بتاريخ إنتاج/انتهاء)</span>
+                            </label>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">صورة الصنف</label>
@@ -194,6 +235,7 @@
                     </form>
 
                     <div class="flex justify-end gap-3">
+                        <button type="button" onclick="openProductEditScreen()" class="btn btn-secondary">✏️ تعديل الصنف</button>
                         <button type="button" onclick="openFullEditRequest()" class="btn btn-secondary">📝 طلب تعديل الصنف</button>
                         <button type="button" onclick="saveExistingItem()" class="btn btn-primary">💾 حفظ في الجرد</button>
                     </div>
@@ -216,6 +258,19 @@
         </div>
 
         <div class="space-y-6">
+            <!-- بحث في الأصناف المجرودة -->
+            <div class="card p-5">
+                <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100 mb-3">🔍 بحث في الأصناف المجرودة</h3>
+                <div class="relative">
+                    <input type="text" id="searchScannedInput" class="w-full px-4 py-3 pr-12 border-2 border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 dark:bg-gray-700 dark:text-white" placeholder="ابحث بالاسم أو الباركود..." oninput="searchScannedItems()">
+                    <svg class="w-5 h-5 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                </div>
+                <div id="searchScannedResults" class="mt-3 space-y-2 max-h-[300px] overflow-y-auto hidden"></div>
+                <div id="searchScannedCount" class="mt-2 text-sm text-gray-500 hidden"></div>
+            </div>
+
             <div class="card p-5">
                 <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4">📦 آخر عناصر الجرد</h3>
                 <div id="recentItemsList" class="space-y-2 max-h-[360px] overflow-y-auto">
@@ -464,11 +519,80 @@ let lastMissingBarcode = '';
 let lastFoundProduct = null;
 let lastFoundUnits = [];
 let displayUnitsData = {};
+const PERIODIC_LOCATION_STATE_KEY = 'periodic_stocktake_location_state';
+
+function persistLocationSelection() {
+    const duId = document.getElementById('displayUnitSelect')?.value || '';
+    const shId = document.getElementById('shelfSelect')?.value || '';
+    try {
+        sessionStorage.setItem(PERIODIC_LOCATION_STATE_KEY, JSON.stringify({
+            du_id: duId,
+            shelf_id: shId
+        }));
+    } catch (_) {}
+}
+
+function readSavedLocationSelection() {
+    const params = new URLSearchParams(window.location.search || '');
+    const duFromUrl = params.get('du_id') || '';
+    const shFromUrl = params.get('shelf_id') || '';
+    if (duFromUrl || shFromUrl) {
+        return { du_id: duFromUrl, shelf_id: shFromUrl };
+    }
+    try {
+        const raw = sessionStorage.getItem(PERIODIC_LOCATION_STATE_KEY);
+        if (!raw) return { du_id: '', shelf_id: '' };
+        const parsed = JSON.parse(raw);
+        return {
+            du_id: String(parsed?.du_id || ''),
+            shelf_id: String(parsed?.shelf_id || '')
+        };
+    } catch (_) {
+        return { du_id: '', shelf_id: '' };
+    }
+}
+
+function applySavedLocationSelection() {
+    const duSelect = document.getElementById('displayUnitSelect');
+    const shelfSelect = document.getElementById('shelfSelect');
+    if (!duSelect || !shelfSelect) return;
+    const saved = readSavedLocationSelection();
+    if (!saved.du_id) return;
+
+    const duExists = Array.from(duSelect.options).some(opt => opt.value === saved.du_id);
+    if (!duExists) return;
+
+    duSelect.value = saved.du_id;
+    onDisplayUnitChange();
+    if (saved.shelf_id) {
+        const shExists = Array.from(shelfSelect.options).some(opt => opt.value === saved.shelf_id);
+        if (shExists) shelfSelect.value = saved.shelf_id;
+    }
+    updateLocationBadge();
+    persistLocationSelection();
+}
+
+function buildPeriodicReturnTo() {
+    const currentUrl = new URL(window.location.href);
+    const duId = document.getElementById('displayUnitSelect')?.value || '';
+    const shId = document.getElementById('shelfSelect')?.value || '';
+    if (duId) currentUrl.searchParams.set('du_id', duId);
+    else currentUrl.searchParams.delete('du_id');
+    if (shId) currentUrl.searchParams.set('shelf_id', shId);
+    else currentUrl.searchParams.delete('shelf_id');
+    return `${currentUrl.pathname}${currentUrl.search || ''}`;
+}
 
 // Load display units and shelves data
-(async function loadDisplayUnitsData() {
+async function loadDisplayUnitsData(preserveSelection = true) {
+    const duSelect = document.getElementById('displayUnitSelect');
+    const shelfSelect = document.getElementById('shelfSelect');
+    const prevDu = preserveSelection ? (duSelect?.value || '') : '';
+    const prevSh = preserveSelection ? (shelfSelect?.value || '') : '';
+    displayUnitsData = {};
     try {
-        const resp = await fetch('/api/display-units', {headers: {'X-CSRF-Token': document.getElementById('csrfToken')?.value || ''}});
+        const sessionQs = currentSessionId ? `?session_id=${currentSessionId}` : '';
+        const resp = await fetch(`/api/display-units${sessionQs}`, {headers: {'X-CSRF-Token': document.getElementById('csrfToken')?.value || ''}});
         if (resp.ok) {
             const data = await resp.json();
             if (data.success && data.display_units) {
@@ -478,6 +602,22 @@ let displayUnitsData = {};
             }
         }
     } catch(e) {}
+
+    if (duSelect && prevDu) {
+        duSelect.value = prevDu;
+    }
+    onDisplayUnitChange();
+    if (shelfSelect && prevSh) {
+        const exists = Array.from(shelfSelect.options).some(opt => opt.value === prevSh);
+        if (exists) shelfSelect.value = prevSh;
+    }
+    persistLocationSelection();
+    updateLocationBadge();
+}
+
+(async function initDisplayUnitsData() {
+    await loadDisplayUnitsData(false);
+    applySavedLocationSelection();
 })();
 
 function onDisplayUnitChange() {
@@ -493,16 +633,35 @@ function onDisplayUnitChange() {
         shelves.forEach(sh => {
             const opt = document.createElement('option');
             opt.value = sh.id;
-            opt.textContent = sh.name + (sh.notes ? ` (${sh.notes})` : '');
+            opt.dataset.closed = sh.periodic_closed ? '1' : '0';
+            opt.dataset.closedBy = sh.periodic_closed_by_name || '';
+            opt.dataset.closedAt = sh.periodic_closed_at || '';
+            opt.textContent = `${sh.periodic_closed ? '🔒 ' : ''}${sh.name}${sh.notes ? ` (${sh.notes})` : ''}`;
             shelfSelect.appendChild(opt);
         });
     }
     
     updateLocationBadge();
+    persistLocationSelection();
 }
 
 function onShelfChange() {
     updateLocationBadge();
+    persistLocationSelection();
+}
+
+function getSelectedShelfStatus() {
+    const shelfSelect = document.getElementById('shelfSelect');
+    const opt = shelfSelect?.selectedOptions?.[0];
+    return {
+        closed: !!opt && opt.dataset.closed === '1',
+        closedBy: (opt && opt.dataset.closedBy) ? opt.dataset.closedBy : '',
+        closedAt: (opt && opt.dataset.closedAt) ? opt.dataset.closedAt : ''
+    };
+}
+
+function isSelectedShelfClosed() {
+    return getSelectedShelfStatus().closed;
 }
 
 function updateLocationBadge() {
@@ -511,19 +670,109 @@ function updateLocationBadge() {
     const badge = document.getElementById('locationBadge');
     const badgeText = document.getElementById('locationBadgeText');
     const warning = document.getElementById('locationWarning');
+    const closedWarning = document.getElementById('shelfClosedWarning');
+    const closeShelfBtn = document.getElementById('closeShelfBtn');
+    const unlockShelfBtn = document.getElementById('unlockShelfBtn');
     
     if (duSelect.value && shelfSelect.value) {
         const duName = duSelect.options[duSelect.selectedIndex].text;
         const shName = shelfSelect.options[shelfSelect.selectedIndex].text;
-        badgeText.textContent = `${duName} → ${shName}`;
+        const st = getSelectedShelfStatus();
+        badgeText.textContent = `${duName} → ${shName}${st.closed ? ' (مغلق)' : ''}`;
         badge.classList.remove('hidden');
         warning.classList.add('hidden');
+        if (st.closed) {
+            const by = st.closedBy ? ` بواسطة ${st.closedBy}` : '';
+            closedWarning.textContent = `🔒 هذا الرف مغلق وتم اعتماد جرده${by}. لا يمكن تنفيذ عمليات جديدة عليه.`;
+            closedWarning.classList.remove('hidden');
+            closeShelfBtn.classList.add('hidden');
+            unlockShelfBtn.classList.toggle('hidden', !currentSessionId);
+        } else {
+            closedWarning.classList.add('hidden');
+            closeShelfBtn.classList.toggle('hidden', !currentSessionId);
+            unlockShelfBtn.classList.add('hidden');
+        }
     } else {
         badge.classList.add('hidden');
+        closeShelfBtn.classList.add('hidden');
+        unlockShelfBtn.classList.add('hidden');
+        closedWarning.classList.add('hidden');
         if (currentSessionId) {
             warning.classList.remove('hidden');
         }
     }
+}
+
+async function closeCurrentShelf() {
+    if (!currentSessionId) {
+        showToast('ابدأ جلسة جرد أولاً', 'warning');
+        return;
+    }
+    const duId = document.getElementById('displayUnitSelect').value;
+    const shSelect = document.getElementById('shelfSelect');
+    const shId = shSelect.value;
+    if (!duId || !shId) {
+        showToast('اختر وحدة العرض والرف أولاً', 'warning');
+        return;
+    }
+    const shName = shSelect.options[shSelect.selectedIndex]?.text || 'الرف المحدد';
+    if (!confirm(`هل تريد إغلاق ${shName}؟ بعد الإغلاق لن يمكن إضافة عمليات جديدة عليه.`)) return;
+
+    const resp = await fetch('/api/periodic-stocktake/shelf/close', {
+        method: 'POST',
+        headers: csrfHeaders({'Content-Type': 'application/json'}),
+        body: JSON.stringify({ session_id: currentSessionId, shelf_id: parseInt(shId) })
+    });
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        showToast('تعذر إغلاق الرف: انتهت الجلسة', 'error');
+        return;
+    }
+    const data = await resp.json();
+    if (!data.success) {
+        showToast(data.message || 'تعذر إغلاق الرف', 'error');
+        return;
+    }
+
+    await loadDisplayUnitsData(true);
+    document.getElementById('foundCard').classList.add('hidden');
+    document.getElementById('notFoundCard').classList.add('hidden');
+    showToast(data.message || 'تم إغلاق الرف بنجاح ✅', 'success');
+}
+
+async function unlockCurrentShelf() {
+    if (!currentSessionId) {
+        showToast('ابدأ جلسة جرد أولاً', 'warning');
+        return;
+    }
+    const duId = document.getElementById('displayUnitSelect').value;
+    const shSelect = document.getElementById('shelfSelect');
+    const shId = shSelect.value;
+    if (!duId || !shId) {
+        showToast('اختر وحدة العرض والرف أولاً', 'warning');
+        return;
+    }
+    const shName = shSelect.options[shSelect.selectedIndex]?.text || 'الرف المحدد';
+    if (!confirm(`هل تريد فتح قفل ${shName}؟ بعد الفتح يمكن تعديل/حذف وإضافة عمليات عليه.`)) return;
+
+    const resp = await fetch('/api/periodic-stocktake/shelf/unlock', {
+        method: 'POST',
+        headers: csrfHeaders({'Content-Type': 'application/json'}),
+        body: JSON.stringify({ session_id: currentSessionId, shelf_id: parseInt(shId) })
+    });
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        showToast('تعذر فتح قفل الرف: انتهت الجلسة', 'error');
+        return;
+    }
+    const data = await resp.json();
+    if (!data.success) {
+        showToast(data.message || 'تعذر فتح قفل الرف', 'error');
+        return;
+    }
+
+    await loadDisplayUnitsData(true);
+    showToast(data.message || 'تم فتح قفل الرف ✅', 'success');
 }
 
 // تنسيق التاريخ تلقائياً
@@ -617,6 +866,49 @@ function dateKeyHandler(e, input) {
     }
 }
 
+function toggleExistingNoExpiry(forceValue = null) {
+    const checkbox = document.getElementById('existingNoExpiryDates');
+    const prodInput = document.getElementById('existingProductionDate');
+    const expInput = document.getElementById('existingExpiryDate');
+    if (!checkbox || !prodInput || !expInput) return;
+
+    if (forceValue !== null) {
+        checkbox.checked = !!forceValue;
+    }
+
+    const disabled = !!checkbox.checked;
+    [prodInput, expInput].forEach((inp) => {
+        inp.disabled = disabled;
+        inp.required = !disabled;
+        inp.classList.remove('border-emerald-400', 'border-red-400');
+        if (disabled) {
+            inp.value = '';
+            inp.classList.add('bg-gray-100', 'dark:bg-gray-700/50', 'text-gray-400');
+        } else {
+            inp.classList.remove('bg-gray-100', 'dark:bg-gray-700/50', 'text-gray-400');
+        }
+    });
+}
+
+function bindAutoSelectNumberInputs() {
+    const selectAll = (el) => {
+        if (!el || !el.matches || !el.matches('input[type="number"][data-autoselect="1"]')) return;
+        setTimeout(() => {
+            try { el.select(); } catch (_) {}
+        }, 0);
+    };
+    document.addEventListener('focusin', (e) => selectAll(e.target));
+    document.addEventListener('click', (e) => selectAll(e.target));
+}
+
+function bindNoWheelNumberInputs() {
+    document.addEventListener('wheel', (e) => {
+        const el = e.target;
+        if (!el || !el.matches || !el.matches('input[type="number"][data-no-wheel="1"]')) return;
+        e.preventDefault();
+    }, { passive: false });
+}
+
 function csrfHeaders(extra = {}) {
     const token = document.getElementById('csrfToken')?.value || '';
     return Object.assign({ 'X-CSRF-Token': token }, extra);
@@ -665,6 +957,7 @@ async function startSession() {
         document.getElementById('startSessionBtn').classList.add('hidden');
         document.getElementById('currentSessionBadge').classList.remove('hidden');
         document.getElementById('currentSessionTitle').textContent = data.session.title;
+        await loadDisplayUnitsData(true);
     } else {
         showToast(data.message || 'تعذر بدء جلسة الجرد', 'error');
     }
@@ -725,14 +1018,129 @@ function onScanSuccess(decodedText) {
     stopCamera();
 }
 
+// === بحث في الأصناف المجرودة ===
+let searchScannedTimer = null;
+function formatQty(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return (v ?? '-');
+    if (Number.isInteger(n)) return String(n);
+    return n.toFixed(3).replace(/\.?0+$/, '');
+}
+function searchScannedItems() {
+    clearTimeout(searchScannedTimer);
+    searchScannedTimer = setTimeout(async () => {
+        const q = (document.getElementById('searchScannedInput')?.value || '').trim();
+        const resultsDiv = document.getElementById('searchScannedResults');
+        const countDiv = document.getElementById('searchScannedCount');
+        if (!q) {
+            resultsDiv.classList.add('hidden');
+            countDiv.classList.add('hidden');
+            return;
+        }
+        if (!currentSessionId) {
+            resultsDiv.innerHTML = '<p class="text-sm text-amber-500 text-center py-3">افتح جلسة جرد أولاً</p>';
+            resultsDiv.classList.remove('hidden');
+            countDiv.classList.add('hidden');
+            return;
+        }
+        try {
+            const resp = await fetch(`/api/periodic-stocktake/search-scanned?session_id=${currentSessionId}&q=${encodeURIComponent(q)}`, {headers: csrfHeaders()});
+            const data = await resp.json();
+            if (!data.success) {
+                resultsDiv.innerHTML = '<p class="text-sm text-red-400 text-center py-3">خطأ في البحث</p>';
+                resultsDiv.classList.remove('hidden');
+                countDiv.classList.add('hidden');
+                return;
+            }
+            if (data.items && data.items.length > 0) {
+                resultsDiv.innerHTML = data.items.map(item => `
+                    <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-gray-800 dark:text-gray-100 text-sm">${item.product_name || ''}</div>
+                                <div class="text-xs text-gray-500">${item.barcode || '-'} — المجرود: ${formatQty(item.counted_stock)} ${item.selected_unit || '-'}</div>
+                                <div class="text-xs text-indigo-600 dark:text-indigo-300 mt-1">الأساسية: ${formatQty(item.primary_qty)} ${item.primary_unit || item.selected_unit || '-'}</div>
+                                <div class="text-xs text-gray-400 mt-1">
+                                    ${item.production_date ? 'إنتاج: ' + item.production_date : ''}
+                                    ${item.expiry_date ? ' | انتهاء: ' + item.expiry_date : ''}
+                                    ${item.batch_no ? ' | باتش: ' + item.batch_no : ''}
+                                </div>
+                            </div>
+                            <span class="px-2 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold shrink-0">مجرود ✓</span>
+                        </div>
+                    </div>
+                `).join('');
+                countDiv.textContent = `${data.items.length} نتيجة`;
+                resultsDiv.classList.remove('hidden');
+                countDiv.classList.remove('hidden');
+            } else {
+                resultsDiv.innerHTML = '<p class="text-sm text-gray-400 text-center py-3">لا توجد نتائج</p>';
+                resultsDiv.classList.remove('hidden');
+                countDiv.classList.add('hidden');
+            }
+        } catch(e) {
+            console.error('search error:', e);
+            resultsDiv.innerHTML = '<p class="text-sm text-red-400 text-center py-3">حدث خطأ أثناء البحث</p>';
+            resultsDiv.classList.remove('hidden');
+        }
+    }, 300);
+}
+
+// عرض تنبيه مجرود مسبقاً
+function showAlreadyScanned(items) {
+    const alertDiv = document.getElementById('alreadyScannedAlert');
+    const detailsDiv = document.getElementById('alreadyScannedDetails');
+    if (items && items.length > 0) {
+        detailsDiv.innerHTML = items.map(item => `
+            <div class="flex items-center gap-2">
+                <span>📋</span>
+                <span>الوحدة: <b>${item.selected_unit || '-'}</b> — الكمية: <b>${item.counted_stock}</b>
+                ${item.batch_no ? ' — باتش: <b>' + item.batch_no + '</b>' : ''}
+                ${item.production_date ? ' — إنتاج: ' + item.production_date : ''}
+                ${item.expiry_date ? ' — انتهاء: ' + item.expiry_date : ''}</span>
+            </div>
+        `).join('');
+        alertDiv.classList.remove('hidden');
+    } else {
+        alertDiv.classList.add('hidden');
+    }
+}
+
 function searchBarcode() {
     const barcode = document.getElementById('barcodeInput').value.trim();
     if (barcode) processBarcode(barcode);
 }
 
-function populateExistingUnits(units, barcode) {
+function openDirectAddProduct(event) {
+    if (event) event.preventDefault();
+    const currentPath = buildPeriodicReturnTo();
+    const returnTo = encodeURIComponent(currentPath || '/periodic-stocktake');
+    window.location.href = `/products?open=add&return_to=${returnTo}`;
+}
+
+function openProductEditScreen() {
+    const productId = parseInt(document.getElementById('existingProductId').value, 10);
+    if (!productId) {
+        showToast('لا يوجد صنف محدد للتعديل', 'warning');
+        return;
+    }
+    const currentPath = buildPeriodicReturnTo();
+    const returnTo = encodeURIComponent(currentPath || '/periodic-stocktake');
+    window.location.href = `/products?edit_id=${productId}&return_to=${returnTo}`;
+}
+
+function populateExistingUnits(units, barcode, serverMatchedIdx) {
     const select = document.getElementById('existingUnit');
     select.innerHTML = '';
+
+    let matchedIdx = (typeof serverMatchedIdx === 'number') ? serverMatchedIdx : -1;
+    if (matchedIdx < 0) {
+        units.forEach((u, idx) => {
+            if ((u.barcode || '') === barcode) matchedIdx = idx;
+        });
+    }
+    if (matchedIdx < 0) matchedIdx = 0;
+
     units.forEach((u, idx) => {
         const opt = document.createElement('option');
         opt.value = u.unit || 'حبه';
@@ -743,7 +1151,7 @@ function populateExistingUnits(units, barcode) {
         opt.dataset.sell = u.sell_price || u.price || 0;
         const convLabel = (u.conversion_factor || u.pack_size || 1) > 1 ? ` (= ${u.conversion_factor || u.pack_size} ${units[0]?.unit || 'أساسية'})` : ' (أساسية)';
         opt.textContent = `${u.unit || 'حبه'}${convLabel}`;
-        if ((u.barcode || '') === barcode || idx === 0) opt.selected = true;
+        if (idx === matchedIdx) opt.selected = true;
         select.appendChild(opt);
     });
     
@@ -815,10 +1223,14 @@ async function processBarcode(barcode) {
         document.getElementById('locationWarning').classList.remove('hidden');
         return;
     }
+    if (isSelectedShelfClosed()) {
+        showToast('هذا الرف مغلق وتم اعتماد جرده، اختر رفاً آخر', 'warning');
+        return;
+    }
     const resp = await fetch('/api/periodic-stocktake/scan', {
         method: 'POST',
         headers: csrfHeaders({'Content-Type': 'application/json'}),
-        body: JSON.stringify({ session_id: currentSessionId, barcode })
+        body: JSON.stringify({ session_id: currentSessionId, shelf_id: shId, barcode })
     });
     const data = await resp.json();
 
@@ -843,8 +1255,29 @@ async function processBarcode(barcode) {
         document.getElementById('existingBatchNo').value = '';
         document.getElementById('existingProductionDate').value = '';
         document.getElementById('existingExpiryDate').value = '';
+        toggleExistingNoExpiry(false);
         document.getElementById('existingNotes').value = '';
-        populateExistingUnits(lastFoundUnits, barcode);
+        populateExistingUnits(lastFoundUnits, barcode, data.matched_unit_index);
+        showAlreadyScanned(data.already_scanned || []);
+
+        // عرض تنبيه "مجرود مسبقاً"
+        const alertDiv = document.getElementById('alreadyScannedAlert');
+        const detailsDiv = document.getElementById('alreadyScannedDetails');
+        if (data.already_scanned && data.already_scanned.length > 0) {
+            detailsDiv.innerHTML = data.already_scanned.map(s => {
+                const d = s.created_at ? new Date(s.created_at).toLocaleString('ar-SA') : '';
+                return `<div class="flex flex-wrap gap-3 py-1 border-b border-amber-200/50 last:border-0">
+                    <span>الكمية: <b>${s.counted_stock}</b> ${s.selected_unit || ''}</span>
+                    <span>الباتش: <b>${s.batch_no || '-'}</b></span>
+                    <span>الإنتاج: <b>${s.production_date || '-'}</b></span>
+                    <span>الانتهاء: <b>${s.expiry_date || '-'}</b></span>
+                    <span class="text-xs text-amber-500">${d}</span>
+                </div>`;
+            }).join('');
+            alertDiv.classList.remove('hidden');
+        } else {
+            alertDiv.classList.add('hidden');
+        }
     } else {
         lastMissingBarcode = barcode;
         document.getElementById('foundCard').classList.add('hidden');
@@ -857,6 +1290,7 @@ async function saveExistingItem() {
     const form = document.getElementById('existingItemForm');
     const productionDate = document.getElementById('existingProductionDate').value;
     const expiryDate = document.getElementById('existingExpiryDate').value;
+    const noExpiryDates = !!document.getElementById('existingNoExpiryDates')?.checked;
     
     const duId = document.getElementById('displayUnitSelect').value;
     const shId = document.getElementById('shelfSelect').value;
@@ -864,13 +1298,17 @@ async function saveExistingItem() {
         showToast('يجب اختيار وحدة العرض والرف أولاً', 'warning');
         return;
     }
+    if (isSelectedShelfClosed()) {
+        showToast('هذا الرف مغلق وتم اعتماد جرده، لا يمكن الحفظ عليه', 'warning');
+        return;
+    }
     
-    if (!productionDate) {
+    if (!noExpiryDates && !productionDate) {
         showToast('تاريخ الإنتاج مطلوب', 'warning');
         document.getElementById('existingProductionDate').focus();
         return;
     }
-    if (!expiryDate) {
+    if (!noExpiryDates && !expiryDate) {
         showToast('تاريخ الانتهاء مطلوب', 'warning');
         document.getElementById('existingExpiryDate').focus();
         return;
@@ -880,6 +1318,9 @@ async function saveExistingItem() {
     document.getElementById('existingShelfId').value = shId;
     
     const fd = new FormData(form);
+    if (noExpiryDates) {
+        fd.set('no_expiry_dates', '1');
+    }
     fd.append('session_id', currentSessionId || '');
     fd.append('csrf_token', document.getElementById('csrfToken').value);
     const resp = await fetch('/api/periodic-stocktake/save-item', { method: 'POST', headers: csrfHeaders(), body: fd });
@@ -913,6 +1354,7 @@ async function saveExistingItem() {
         list.prepend(box);
         deleteRecording('existing');
         form.reset();
+        toggleExistingNoExpiry(false);
         document.getElementById('foundCard').classList.add('hidden');
         showToast(data.message || 'تم الحفظ ✅', 'success');
     } else {
@@ -939,6 +1381,10 @@ async function submitRequest() {
     fd.append('csrf_token', document.getElementById('csrfToken').value);
     const duId = document.getElementById('displayUnitSelect').value;
     const shId = document.getElementById('shelfSelect').value;
+    if (isSelectedShelfClosed()) {
+        showToast('هذا الرف مغلق وتم اعتماد جرده، لا يمكن رفع طلبات جديدة عليه', 'warning');
+        return;
+    }
     if (duId) fd.append('display_unit_id', duId);
     if (shId) fd.append('shelf_id', shId);
     const resp = await fetch('/api/periodic-stocktake/request-product', { method: 'POST', headers: csrfHeaders(), body: fd });
@@ -1240,7 +1686,7 @@ async function toggleRecording(type) {
         } catch (err) {
             console.error('Microphone error:', err);
             if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                showToast('تم رفض إذن الميكروفون', 'error');
+                showToast('يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح', 'error');
             } else if (err.name === 'NotFoundError') {
                 showToast('لم يتم العثور على ميكروفون', 'error');
             } else if (err.name === 'NotReadableError' || err.name === 'AbortError') {
@@ -1291,10 +1737,14 @@ function handleVoiceUpload(type, input) {
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('barcodeInput').focus();
     loadCameras();
+    bindAutoSelectNumberInputs();
+    bindNoWheelNumberInputs();
     document.getElementById('existingUnit')?.addEventListener('change', updateExistingUnitMeta);
 });
 
 // تحديث قائمة الجرد تلقائياً (تُستدعى من SSE)
+// searchScannedItems معرّفة أعلاه
+
 async function loadRecentItems() {
     if (!currentSessionId) return;
     const resp = await fetch(`/api/periodic-stocktake/recent?session_id=${currentSessionId}`, {headers: csrfHeaders()});
@@ -1364,7 +1814,7 @@ async function editItem(id) {
     const html = `
         <div class="space-y-3" id="editForm_${id}">
             <div><label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">الكمية</label>
-            <input type="number" id="editQty_${id}" value="${i.counted_stock}" min="1" step="1" class="form-input text-center font-bold" oninput="this.value=Math.floor(Math.abs(this.value))||1"></div>
+            <input type="number" id="editQty_${id}" value="${i.counted_stock}" min="1" step="1" data-autoselect="1" data-no-wheel="1" class="form-input qty-no-spinner text-center font-bold" onfocus="this.select()" onclick="this.select()" onwheel="this.blur()" oninput="this.value=Math.floor(Math.abs(this.value))||1"></div>
             <div><label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">تاريخ الإنتاج</label>
             <input type="text" id="editProd_${id}" value="${i.production_date||''}" class="form-input font-mono text-center" dir="ltr" placeholder="1-1-2026" onblur="parseDateField(this)" onkeydown="dateKeyHandler(event, this)"></div>
             <div><label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">تاريخ الانتهاء</label>
@@ -1463,8 +1913,3 @@ async function loadRecentRequests() {
 }
 </script>
 {% endblock %}
-
-
-
-
-

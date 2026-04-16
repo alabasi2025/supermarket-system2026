@@ -886,6 +886,14 @@ def has_perm(module_code, action='view'):
     perms = get_user_permissions(session.get('user_id', 0))
     return perms.get(module_code, {}).get(action, False)
 
+@app.after_request
+def add_no_cache_headers(response):
+    if 'text/html' in response.content_type:
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
 @app.before_request
 def csrf_protect():
     if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
@@ -907,6 +915,14 @@ def csrf_protect():
 
     flash('الطلب غير صالح، أعد تحميل الصفحة وحاول مرة أخرى', 'error')
     return redirect(url_for('login'))
+
+# ═══════════════════════════════════════════════════════════════
+# CSRF Token Refresh API
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/csrf-token')
+def api_csrf_token():
+    return jsonify({'token': get_csrf_token()})
 
 # ═══════════════════════════════════════════════════════════════
 # الصفحات الرئيسية
@@ -2220,9 +2236,9 @@ def api_categories():
         if parent_id == '' or parent_id == 0:
             parent_id = None
         db.execute('''
-            INSERT INTO categories (name, parent_id, sort_order)
-            VALUES (%s, %s, %s)
-        ''', (data['name'], parent_id, data.get('sort_order', 0)))
+            INSERT INTO categories (name, parent_id, sort_order, description, is_active)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (data['name'], parent_id, data.get('sort_order', 0), data.get('description', ''), data.get('is_active', True)))
         db.commit()
         return jsonify({'success': True, 'message': 'تم إضافة القسم'})
     
@@ -2240,9 +2256,9 @@ def api_category(id):
         if parent_id == '' or parent_id == 0:
             parent_id = None
         db.execute('''
-            UPDATE categories SET name=%s, parent_id=%s, sort_order=%s
+            UPDATE categories SET name=%s, parent_id=%s, sort_order=%s, description=%s, is_active=%s
             WHERE id=%s
-        ''', (data['name'], parent_id, data.get('sort_order', 0), id))
+        ''', (data['name'], parent_id, data.get('sort_order', 0), data.get('description', ''), data.get('is_active', True), id))
         db.commit()
         return jsonify({'success': True, 'message': 'تم تحديث القسم'})
     
@@ -2268,6 +2284,10 @@ def api_category(id):
 @role_required('manager')
 def units():
     db = get_db()
+    try:
+        _sync_units_catalog_from_products(db)
+    except Exception:
+        db.rollback()
     units_list = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
     return render_template('units.html', units=units_list)
 
@@ -2277,17 +2297,25 @@ def api_units():
     db = get_db()
     
     if request.method == 'POST':
-        data = request.json
+        data = request.json or {}
+        name = (data.get('name') or '').strip()
+        symbol = (data.get('symbol') or '').strip()
+        if not name:
+            return jsonify({'success': False, 'message': 'اسم الوحدة مطلوب'}), 400
         # التحقق من عدم التكرار
-        existing = db.execute('SELECT id FROM units WHERE name = %s', (data['name'],)).fetchone()
+        existing = db.execute('SELECT id FROM units WHERE LOWER(name) = LOWER(%s)', (name,)).fetchone()
         if existing:
-            return jsonify({'success': False, 'message': 'الوحدة موجودة مسبقاً'})
+            return jsonify({'success': False, 'message': 'الوحدة موجودة مسبقاً'}), 400
         
         db.execute('INSERT INTO units (name, symbol) VALUES (%s, %s)',
-                   (data['name'], data.get('symbol', '')))
+                   (name, symbol))
         db.commit()
         return jsonify({'success': True, 'message': 'تم إضافة الوحدة'})
-    
+
+    try:
+        _sync_units_catalog_from_products(db)
+    except Exception:
+        db.rollback()
     units_list = db.execute('SELECT * FROM units WHERE is_active = TRUE ORDER BY name').fetchall()
     return jsonify([dict(u) for u in units_list])
 
@@ -2297,9 +2325,21 @@ def api_unit(id):
     db = get_db()
     
     if request.method == 'PUT':
-        data = request.json
+        data = request.json or {}
+        name = (data.get('name') or '').strip()
+        symbol = (data.get('symbol') or '').strip()
+        if not name:
+            return jsonify({'success': False, 'message': 'اسم الوحدة مطلوب'}), 400
+
+        duplicate = db.execute(
+            'SELECT id FROM units WHERE LOWER(name) = LOWER(%s) AND id <> %s',
+            (name, id)
+        ).fetchone()
+        if duplicate:
+            return jsonify({'success': False, 'message': 'اسم الوحدة مستخدم مسبقاً'}), 400
+
         db.execute('UPDATE units SET name=%s, symbol=%s WHERE id=%s',
-                   (data['name'], data.get('symbol', ''), id))
+                   (name, symbol, id))
         db.commit()
         return jsonify({'success': True, 'message': 'تم تحديث الوحدة'})
     
@@ -2942,6 +2982,13 @@ def api_approve_request(request_id):
         return jsonify({'success': False, 'message': 'الطلب تم معالجته مسبقًا'}), 400
     
     # إنشاء الصنف الجديد
+    data = request.get_json() or {}
+    extra_units = data.get('extra_units', [])
+    _ensure_units_registered(
+        db,
+        [req.get('unit')] + [eu.get('unit') for eu in extra_units if isinstance(eu, dict)]
+    )
+
     product_code = f"NEW-{request_id}"
     new_product = db.execute('''
         INSERT INTO products (product_code, name, barcode, category_id, unit, cost_price, sell_price, current_stock, is_active)
@@ -2959,8 +3006,6 @@ def api_approve_request(request_id):
     )).fetchone()
     
     # إضافة الوحدات الإضافية إذا وجدت
-    data = request.get_json() or {}
-    extra_units = data.get('extra_units', [])
     for eu in extra_units:
         if eu.get('unit'):
             db.execute('''
@@ -3370,29 +3415,61 @@ def api_stocktake_scan():
         return jsonify({'success': True, 'found': False, 'barcode': barcode})
 
     product = result['product']
-    units = []
-    base_unit = product.get('unit') or 'حبه'
-    units.append({
-        'unit': base_unit,
-        'barcode': product.get('barcode') or barcode,
-        'pack_size': 1,
-        'conversion_factor': 1,
-        'cost_price': str(product.get('cost_price') or 0),
-        'sell_price': str(product.get('sell_price') or product.get('price') or 0),
-        'is_sale': True,
-        'is_purchase': False
-    })
+    product_id = product['id']
 
-    extra_units = db.execute('''
+    # جلب المنتج الأصلي من products للحصول على الوحدة والباركود الأساسيين
+    original = db.execute(
+        'SELECT unit, barcode, cost_price, sell_price FROM products WHERE id = %s', (product_id,)
+    ).fetchone()
+    original_unit = (original.get('unit') if original else None) or 'حبه'
+    original_barcode = (original.get('barcode') if original else None) or ''
+    original_cost = str(original.get('cost_price') or 0) if original else '0'
+    original_sell = str(original.get('sell_price') or 0) if original else '0'
+
+    # بناء قائمة الوحدات من product_barcodes
+    all_pb_units = db.execute('''
         SELECT unit, barcode, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale
-        FROM product_barcodes
-        WHERE product_id = %s
-        ORDER BY sort_order, conversion_factor, pack_size
-    ''', (product['id'],)).fetchall()
-    seen = {(base_unit, product.get('barcode') or barcode)}
-    for u in extra_units:
+        FROM product_barcodes WHERE product_id = %s
+        ORDER BY conversion_factor ASC, sort_order ASC, pack_size ASC
+    ''', (product_id,)).fetchall()
+
+    units = []
+    seen_keys = set()
+
+    # الوحدة الأساسية أولاً (conversion_factor = 1)
+    base_added = False
+    for u in all_pb_units:
+        conv = float(u.get('conversion_factor') or u.get('pack_size') or 1)
+        if conv == 1 or conv == 1.0:
+            key = (u.get('unit') or original_unit, u.get('barcode') or '')
+            if key not in seen_keys:
+                units.append({
+                    'unit': u.get('unit') or original_unit,
+                    'barcode': u.get('barcode') or original_barcode,
+                    'pack_size': u.get('pack_size') or 1,
+                    'conversion_factor': 1,
+                    'cost_price': str(u.get('cost_price') or original_cost),
+                    'sell_price': str(u.get('sell_price') or original_sell),
+                    'is_sale': u.get('is_sale', True),
+                    'is_purchase': u.get('is_purchase', False)
+                })
+                seen_keys.add(key)
+                base_added = True
+                break
+
+    if not base_added:
+        units.append({
+            'unit': original_unit, 'barcode': original_barcode,
+            'pack_size': 1, 'conversion_factor': 1,
+            'cost_price': original_cost, 'sell_price': original_sell,
+            'is_sale': True, 'is_purchase': False
+        })
+        seen_keys.add((original_unit, original_barcode))
+
+    # باقي الوحدات (الأكبر)
+    for u in all_pb_units:
         key = (u.get('unit') or '', u.get('barcode') or '')
-        if key not in seen:
+        if key not in seen_keys:
             units.append({
                 'unit': u.get('unit') or 'حبه',
                 'barcode': u.get('barcode') or '',
@@ -3403,9 +3480,16 @@ def api_stocktake_scan():
                 'is_purchase': u.get('is_purchase', False),
                 'is_sale': u.get('is_sale', True)
             })
-            seen.add(key)
+            seen_keys.add(key)
 
-    return jsonify({'success': True, 'found': True, 'product': product, 'units': units})
+    # تحديد الوحدة المطابقة للباركود الممسوح
+    matched_unit_index = 0
+    for idx, u in enumerate(units):
+        if u.get('barcode') == barcode:
+            matched_unit_index = idx
+            break
+
+    return jsonify({'success': True, 'found': True, 'product': product, 'units': units, 'matched_unit_index': matched_unit_index})
 
 @app.route('/api/stocktake/save-item', methods=['POST'])
 @login_required
@@ -3421,6 +3505,7 @@ def api_stocktake_save_item():
         counted_stock = Decimal(str(request.form.get('counted_stock') or 1))
         production_date = request.form.get('production_date') or None
         expiry_date = request.form.get('expiry_date') or None
+        no_expiry_dates = str(request.form.get('no_expiry_dates') or '').strip().lower() in ('1', 'true', 'yes', 'on')
         batch_no = (request.form.get('batch_no') or '').strip() or None
         notes = (request.form.get('notes') or '').strip() or None
         expected_stock = Decimal(str(request.form.get('expected_stock') or 0))
@@ -3659,8 +3744,9 @@ def api_product_barcodes(product_id):
     db = get_db()
     
     if request.method == 'POST':
-        data = request.json
+        data = request.json or {}
         try:
+            _ensure_units_registered(db, [data.get('unit')])
             db.execute('''
                 INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, cost_price, sell_price)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -3688,6 +3774,30 @@ DISPLAY_UNIT_TYPE_LABELS = {
     'freezer': 'فريزر',
     'other': 'أخرى'
 }
+
+def ensure_periodic_stocktake_closed_shelves_table(db):
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS periodic_stocktake_closed_shelves (
+            id SERIAL PRIMARY KEY,
+            session_id INTEGER NOT NULL REFERENCES periodic_stocktake_sessions(id) ON DELETE CASCADE,
+            shelf_id INTEGER NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
+            closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            closed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(session_id, shelf_id)
+        )
+    ''')
+
+def is_periodic_shelf_closed(db, session_id, shelf_id):
+    if not session_id or not shelf_id:
+        return False
+    ensure_periodic_stocktake_closed_shelves_table(db)
+    row = db.execute('''
+        SELECT 1
+        FROM periodic_stocktake_closed_shelves
+        WHERE session_id = %s AND shelf_id = %s
+        LIMIT 1
+    ''', (session_id, shelf_id)).fetchone()
+    return bool(row)
 
 @app.route('/display-units')
 @login_required
@@ -3731,6 +3841,24 @@ def display_units_page():
 @login_required
 def api_get_display_units():
     db = get_db()
+    session_id = request.args.get('session_id', type=int)
+    closed_map = {}
+    if session_id:
+        ensure_periodic_stocktake_closed_shelves_table(db)
+        closed_rows = db.execute('''
+            SELECT cs.shelf_id, cs.closed_at, COALESCE(u.display_name, u.username, '') AS closed_by_name
+            FROM periodic_stocktake_closed_shelves cs
+            LEFT JOIN users u ON u.id = cs.closed_by
+            WHERE cs.session_id = %s
+        ''', (session_id,)).fetchall()
+        closed_map = {
+            r['shelf_id']: {
+                'closed_at': str(r['closed_at']) if r.get('closed_at') else None,
+                'closed_by_name': r.get('closed_by_name') or ''
+            }
+            for r in closed_rows
+        }
+
     units_raw = db.execute('SELECT * FROM display_units WHERE is_active = TRUE ORDER BY id ASC').fetchall()
     result = []
     for u in units_raw:
@@ -3744,6 +3872,10 @@ def api_get_display_units():
         for sh in ud['shelves']:
             if sh.get('created_at'):
                 sh['created_at'] = str(sh['created_at'])
+            closure = closed_map.get(sh['id'])
+            sh['periodic_closed'] = bool(closure)
+            sh['periodic_closed_at'] = closure['closed_at'] if closure else None
+            sh['periodic_closed_by_name'] = closure['closed_by_name'] if closure else ''
         result.append(ud)
     return jsonify({'success': True, 'display_units': result})
 
@@ -3789,8 +3921,8 @@ def api_create_display_unit():
 @app.route('/api/display-units/<int:unit_id>', methods=['PUT'])
 @login_required
 def api_update_display_unit(unit_id):
-    if session['user_id'] != 1:
-        return jsonify({'success': False, 'message': 'فقط مدير النظام يستطيع تعديل وحدات العرض'}), 403
+    if session.get('role') != 'manager':
+        return jsonify({'success': False, 'message': 'فقط المدراء يستطيعون تعديل وحدات العرض'}), 403
     db = get_db()
     try:
         data = request.get_json() or {}
@@ -3873,6 +4005,93 @@ def api_update_shelf(shelf_id):
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'message': f'فشل التحديث: {str(e)}'}), 500
+
+@app.route('/api/periodic-stocktake/shelf/close', methods=['POST'])
+@login_required
+def api_periodic_stocktake_close_shelf():
+    db = get_db()
+    try:
+        data = request.get_json() or {}
+        try:
+            session_id = int(data.get('session_id') or 0)
+        except Exception:
+            session_id = 0
+        try:
+            shelf_id = int(data.get('shelf_id') or 0)
+        except Exception:
+            shelf_id = 0
+
+        if not session_id or not shelf_id:
+            return jsonify({'success': False, 'message': 'بيانات ناقصة'}), 400
+
+        stocktake_session = db.execute('''
+            SELECT id FROM periodic_stocktake_sessions
+            WHERE id = %s AND status = %s
+        ''', (session_id, 'open')).fetchone()
+        if not stocktake_session:
+            return jsonify({'success': False, 'message': 'جلسة الجرد غير موجودة أو مغلقة'}), 400
+
+        shelf = db.execute('''
+            SELECT s.id, s.name
+            FROM shelves s
+            JOIN display_units du ON du.id = s.display_unit_id
+            WHERE s.id = %s AND s.is_active = TRUE AND du.is_active = TRUE
+        ''', (shelf_id,)).fetchone()
+        if not shelf:
+            return jsonify({'success': False, 'message': 'الرف غير موجود أو غير نشط'}), 404
+
+        ensure_periodic_stocktake_closed_shelves_table(db)
+        db.execute('''
+            INSERT INTO periodic_stocktake_closed_shelves (session_id, shelf_id, closed_by, closed_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (session_id, shelf_id)
+            DO UPDATE SET closed_by = EXCLUDED.closed_by, closed_at = NOW()
+        ''', (session_id, shelf_id, session['user_id']))
+        db.commit()
+        return jsonify({'success': True, 'message': f'تم إغلاق الرف "{shelf["name"]}" لهذه الجلسة'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل إغلاق الرف: {str(e)}'}), 500
+
+@app.route('/api/periodic-stocktake/shelf/unlock', methods=['POST'])
+@login_required
+def api_periodic_stocktake_unlock_shelf():
+    db = get_db()
+    try:
+        data = request.get_json() or {}
+        try:
+            session_id = int(data.get('session_id') or 0)
+        except Exception:
+            session_id = 0
+        try:
+            shelf_id = int(data.get('shelf_id') or 0)
+        except Exception:
+            shelf_id = 0
+
+        if not session_id or not shelf_id:
+            return jsonify({'success': False, 'message': 'بيانات ناقصة'}), 400
+
+        stocktake_session = db.execute('''
+            SELECT id FROM periodic_stocktake_sessions
+            WHERE id = %s AND status = %s
+        ''', (session_id, 'open')).fetchone()
+        if not stocktake_session:
+            return jsonify({'success': False, 'message': 'جلسة الجرد غير موجودة أو مغلقة'}), 400
+
+        shelf = db.execute('SELECT id, name FROM shelves WHERE id = %s', (shelf_id,)).fetchone()
+        if not shelf:
+            return jsonify({'success': False, 'message': 'الرف غير موجود'}), 404
+
+        ensure_periodic_stocktake_closed_shelves_table(db)
+        db.execute('''
+            DELETE FROM periodic_stocktake_closed_shelves
+            WHERE session_id = %s AND shelf_id = %s
+        ''', (session_id, shelf_id))
+        db.commit()
+        return jsonify({'success': True, 'message': f'تم فتح قفل الرف "{shelf["name"]}" لهذه الجلسة'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f'فشل فتح قفل الرف: {str(e)}'}), 500
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -4146,6 +4365,13 @@ def api_periodic_approve_request(request_id):
     if req['status'] != 'pending':
         return jsonify({'success': False, 'message': 'الطلب تم معالجته مسبقًا'}), 400
     
+    data = request.get_json() or {}
+    extra_units = data.get('extra_units', [])
+    _ensure_units_registered(
+        db,
+        [req.get('unit')] + [eu.get('unit') for eu in extra_units if isinstance(eu, dict)]
+    )
+
     product_code = f"NEW-P{request_id}"
     new_product = db.execute('''
         INSERT INTO products (product_code, name, barcode, category_id, unit, cost_price, sell_price, current_stock, is_active)
@@ -4162,8 +4388,6 @@ def api_periodic_approve_request(request_id):
         req['quantity_counted'] or 0
     )).fetchone()
     
-    data = request.get_json() or {}
-    extra_units = data.get('extra_units', [])
     for eu in extra_units:
         if eu.get('unit'):
             db.execute('''
@@ -4311,7 +4535,114 @@ def periodic_stocktake_session_detail(session_id):
         rd['is_duplicate'] = rd.get('barcode') in dup_barcodes
         requests.append(rd)
     
-    return render_template('periodic_stocktake_session_detail.html', stocktake_session=stocktake_session, items=items, requests=requests)
+    # حساب الأصناف المكررة عبر الرفوف
+    from collections import defaultdict
+    product_locations = defaultdict(list)
+    for item in items:
+        pid = item['product_id']
+        product_locations[pid].append(item)
+    
+    duplicated_products = []
+    for pid, locs in product_locations.items():
+        if len(locs) > 1:
+            total_base_qty = sum(l['counted_stock'] * (l['pack_size'] or 1) for l in locs)
+            shelves_list = []
+            for l in locs:
+                ps = l['pack_size'] or 1
+                shelves_list.append({
+                    'display_unit_name': l['display_unit_name'] or '-',
+                    'shelf_name': l['shelf_name'] or '-',
+                    'counted_stock': l['counted_stock'],
+                    'unit': l['selected_unit'] or l['unit'] or '',
+                    'pack_size': ps,
+                    'base_qty': l['counted_stock'] * ps,
+                    'expiry_date': l['expiry_date'].strftime('%Y-%m-%d') if l['expiry_date'] and hasattr(l['expiry_date'], 'strftime') else (l['expiry_date'] or '-'),
+                    'production_date': l['production_date'].strftime('%Y-%m-%d') if l['production_date'] and hasattr(l['production_date'], 'strftime') else (l['production_date'] or '-'),
+                })
+            duplicated_products.append({
+                'product_name': locs[0]['product_name'] or locs[0]['product_name_db'] or '',
+                'barcode': locs[0]['barcode'] or '',
+                'total_base_qty': total_base_qty,
+                'locations_count': len(locs),
+                'locations': shelves_list
+            })
+    duplicated_products.sort(key=lambda x: x['locations_count'], reverse=True)
+    
+    # ملخص تجميعي لكل صنف
+    aggregated_products = []
+    for pid, locs in product_locations.items():
+        total_base_qty = sum(l['counted_stock'] * (l['pack_size'] or 1) for l in locs)
+        locations_summary = []
+        for l in locs:
+            ps = l['pack_size'] or 1
+            locations_summary.append({
+                'display_unit_name': l['display_unit_name'] or '-',
+                'shelf_name': l['shelf_name'] or '-',
+                'counted_stock': l['counted_stock'],
+                'unit': l['selected_unit'] or l['unit'] or '',
+                'pack_size': ps,
+                'base_qty': l['counted_stock'] * ps,
+            })
+        aggregated_products.append({
+            'product_name': locs[0]['product_name'] or locs[0]['product_name_db'] or '',
+            'barcode': locs[0]['barcode'] or '',
+            'category_name': locs[0]['category_name'] or '',
+            'total_base_qty': total_base_qty,
+            'locations_count': len(locs),
+            'locations': locations_summary
+        })
+    aggregated_products.sort(key=lambda x: x['product_name'])
+    
+    # كل أصناف النظام مع حالة الجرد
+    all_products = db.execute('''
+        SELECT p.id, p.product_code, p.name, p.brand, p.barcode, p.unit,
+               p.cost_price, p.sell_price, p.min_stock, p.current_stock,
+               c.id as category_id, c.name as category_name
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE p.is_active = TRUE
+        ORDER BY p.name
+    ''').fetchall()
+    
+    # الأقسام للفلتر
+    categories = db.execute('SELECT id, name FROM categories ORDER BY name').fetchall()
+    
+    inventoried_ids = set(product_locations.keys())
+    all_products_status = []
+    for p in all_products:
+        pid = p['id']
+        is_inventoried = pid in inventoried_ids
+        agg = None
+        if is_inventoried:
+            locs = product_locations[pid]
+            agg = {
+                'total_base_qty': sum(l['counted_stock'] * (l['pack_size'] or 1) for l in locs),
+                'locations_count': len(locs)
+            }
+        all_products_status.append({
+            'id': pid,
+            'product_code': p['product_code'] or '',
+            'name': p['name'],
+            'brand': p['brand'] or '',
+            'barcode': p['barcode'] or '',
+            'unit': p['unit'] or '',
+            'cost_price': float(p['cost_price']) if p['cost_price'] else 0,
+            'sell_price': float(p['sell_price']) if p['sell_price'] else 0,
+            'min_stock': p['min_stock'] or 0,
+            'current_stock': float(p['current_stock']) if p['current_stock'] else 0,
+            'category_id': p['category_id'] or 0,
+            'category_name': p['category_name'] or '',
+            'is_inventoried': is_inventoried,
+            'agg': agg
+        })
+    
+    inventory_stats = {
+        'total': len(all_products_status),
+        'inventoried': sum(1 for p in all_products_status if p['is_inventoried']),
+        'not_inventoried': sum(1 for p in all_products_status if not p['is_inventoried'])
+    }
+    
+    return render_template('periodic_stocktake_session_detail.html', stocktake_session=stocktake_session, items=items, requests=requests, duplicated_products=duplicated_products, aggregated_products=aggregated_products, all_products_status=all_products_status, inventory_stats=inventory_stats, categories=categories)
 
 @app.route('/periodic-stocktake/export/<int:session_id>')
 @login_required
@@ -4471,6 +4802,122 @@ def periodic_stocktake_export_excel(session_id):
         for col_letter, width in col_widths.items():
             ws_requests.column_dimensions[col_letter].width = width
     
+    # === ورقة الملخص التجميعي ===
+    from collections import defaultdict as _defaultdict
+    product_locations_xl = _defaultdict(list)
+    for item in items:
+        product_locations_xl[item['product_id']].append(item)
+    
+    ws_summary = wb.create_sheet('ملخص تجميعي')
+    ws_summary.sheet_view.rightToLeft = True
+    
+    sum_headers = ['#', 'اسم الصنف', 'الباركود', 'القسم', 'عدد المواقع', 'الإجمالي (حبة)', 'التوزيع']
+    sum_fill = PatternFill(start_color='10B981', end_color='10B981', fill_type='solid')
+    for col, header in enumerate(sum_headers, 1):
+        cell = ws_summary.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = sum_fill
+        cell.alignment = header_align
+        cell.border = thin_border
+    
+    row_idx = 2
+    for pid, locs in sorted(product_locations_xl.items(), key=lambda x: x[1][0].get('product_name') or x[1][0].get('product_name_db') or ''):
+        total_base = sum(l['counted_stock'] * (l['pack_size'] or 1) for l in locs)
+        dist_parts = []
+        for l in locs:
+            ps = l['pack_size'] or 1
+            base = l['counted_stock'] * ps
+            unit_name = l['selected_unit'] or l['unit'] or ''
+            du_name = l['display_unit_name'] or '-'
+            sh_name = l['shelf_name'] or '-'
+            if ps > 1:
+                dist_parts.append(f"{du_name}>{sh_name}: {l['counted_stock']} {unit_name} (={base} حبة)")
+            else:
+                dist_parts.append(f"{du_name}>{sh_name}: {base}")
+        
+        row_data = [
+            row_idx - 1,
+            locs[0].get('product_name') or locs[0].get('product_name_db') or '',
+            locs[0]['barcode'] or '',
+            locs[0]['category_name'] or '',
+            len(locs),
+            total_base,
+            ' | '.join(dist_parts)
+        ]
+        for col, value in enumerate(row_data, 1):
+            cell = ws_summary.cell(row=row_idx, column=col, value=value)
+            cell.alignment = cell_align
+            cell.border = thin_border
+        
+        # تلوين الأصناف المتكررة
+        if len(locs) > 1:
+            for col in range(1, 8):
+                ws_summary.cell(row=row_idx, column=col).fill = PatternFill(start_color='FEF3C7', end_color='FEF3C7', fill_type='solid')
+        
+        row_idx += 1
+    
+    for col_letter, width in {'A':5,'B':40,'C':18,'D':20,'E':12,'F':16,'G':60}.items():
+        ws_summary.column_dimensions[col_letter].width = width
+    
+    # === ورقة الأصناف المتكررة ===
+    dup_products_xl = {pid: locs for pid, locs in product_locations_xl.items() if len(locs) > 1}
+    if dup_products_xl:
+        ws_dup = wb.create_sheet('أصناف متكررة')
+        ws_dup.sheet_view.rightToLeft = True
+        
+        dup_headers = ['#', 'اسم الصنف', 'الباركود', 'وحدة العرض', 'الرف', 'الوحدة', 'الكمية', 'بالحبة', 'تاريخ الإنتاج', 'تاريخ الانتهاء']
+        dup_fill = PatternFill(start_color='EF4444', end_color='EF4444', fill_type='solid')
+        for col, header in enumerate(dup_headers, 1):
+            cell = ws_dup.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = dup_fill
+            cell.alignment = header_align
+            cell.border = thin_border
+        
+        row_idx = 2
+        counter = 1
+        colors = ['DBEAFE', 'E0E7FF']  # ألوان متناوبة للتمييز بين المنتجات
+        color_idx = 0
+        for pid, locs in sorted(dup_products_xl.items(), key=lambda x: x[1][0].get('product_name') or ''):
+            bg = PatternFill(start_color=colors[color_idx % 2], end_color=colors[color_idx % 2], fill_type='solid')
+            color_idx += 1
+            total_base = sum(l['counted_stock'] * (l['pack_size'] or 1) for l in locs)
+            for i, l in enumerate(locs):
+                ps = l['pack_size'] or 1
+                row_data = [
+                    counter if i == 0 else '',
+                    (l.get('product_name') or l.get('product_name_db') or '') if i == 0 else '',
+                    (l['barcode'] or '') if i == 0 else '',
+                    l['display_unit_name'] or '-',
+                    l['shelf_name'] or '-',
+                    l['selected_unit'] or l['unit'] or '',
+                    l['counted_stock'],
+                    l['counted_stock'] * ps,
+                    l['production_date'].strftime('%Y-%m-%d') if l['production_date'] else '',
+                    l['expiry_date'].strftime('%Y-%m-%d') if l['expiry_date'] else '',
+                ]
+                for col, value in enumerate(row_data, 1):
+                    cell = ws_dup.cell(row=row_idx, column=col, value=value)
+                    cell.alignment = cell_align
+                    cell.border = thin_border
+                    cell.fill = bg
+                row_idx += 1
+            
+            # صف الإجمالي
+            cell = ws_dup.cell(row=row_idx, column=7, value='الإجمالي:')
+            cell.font = Font(bold=True)
+            cell.alignment = cell_align
+            cell.border = thin_border
+            cell = ws_dup.cell(row=row_idx, column=8, value=total_base)
+            cell.font = Font(bold=True, color='DC2626')
+            cell.alignment = cell_align
+            cell.border = thin_border
+            row_idx += 1
+            counter += 1
+        
+        for col_letter, width in {'A':5,'B':40,'C':18,'D':14,'E':12,'F':12,'G':10,'H':10,'I':14,'J':14}.items():
+            ws_dup.column_dimensions[col_letter].width = width
+    
     output = BytesIO()
     wb.save(output)
     output.seek(0)
@@ -4531,8 +4978,15 @@ def api_periodic_edit_request_reject(request_id):
 def api_periodic_stocktake_scan():
     db = get_db()
     data = request.get_json() or {}
-    session_id = data.get('session_id')
+    try:
+        session_id = int(data.get('session_id') or 0)
+    except Exception:
+        session_id = 0
     barcode = (data.get('barcode') or '').strip()
+    try:
+        shelf_id = int(data.get('shelf_id') or 0) or None
+    except Exception:
+        shelf_id = None
 
     if not session_id or not barcode:
         return jsonify({'success': False, 'message': 'بيانات ناقصة'}), 400
@@ -4540,6 +4994,9 @@ def api_periodic_stocktake_scan():
     stocktake_session = db.execute('SELECT * FROM periodic_stocktake_sessions WHERE id = %s AND status = %s', (session_id, 'open')).fetchone()
     if not stocktake_session:
         return jsonify({'success': False, 'message': 'جلسة الجرد غير موجودة أو مغلقة'}), 400
+    
+    if shelf_id and is_periodic_shelf_closed(db, session_id, shelf_id):
+        return jsonify({'success': False, 'message': 'هذا الرف مغلق وتم اعتماد جرده، اختر رفاً آخر'}), 400
 
     try:
         lookup = api_barcode_lookup(barcode)
@@ -4551,29 +5008,59 @@ def api_periodic_stocktake_scan():
         return jsonify({'success': True, 'found': False, 'barcode': barcode})
 
     product = result['product']
-    units = []
-    base_unit = product.get('unit') or 'حبه'
-    units.append({
-        'unit': base_unit,
-        'barcode': product.get('barcode') or barcode,
-        'pack_size': 1,
-        'conversion_factor': 1,
-        'cost_price': str(product.get('cost_price') or 0),
-        'sell_price': str(product.get('sell_price') or product.get('price') or 0),
-        'is_sale': True,
-        'is_purchase': False
-    })
+    product_id = product['id']
 
-    extra_units = db.execute('''
+    # جلب المنتج الأصلي للحصول على الوحدة والباركود الأساسيين
+    original = db.execute(
+        'SELECT unit, barcode, cost_price, sell_price FROM products WHERE id = %s', (product_id,)
+    ).fetchone()
+    original_unit = (original.get('unit') if original else None) or 'حبه'
+    original_barcode = (original.get('barcode') if original else None) or ''
+    original_cost = str(original.get('cost_price') or 0) if original else '0'
+    original_sell = str(original.get('sell_price') or 0) if original else '0'
+
+    all_pb_units = db.execute('''
         SELECT unit, barcode, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale
-        FROM product_barcodes
-        WHERE product_id = %s
-        ORDER BY sort_order, conversion_factor, pack_size
-    ''', (product['id'],)).fetchall()
-    seen = {(base_unit, product.get('barcode') or barcode)}
-    for u in extra_units:
+        FROM product_barcodes WHERE product_id = %s
+        ORDER BY conversion_factor ASC, sort_order ASC, pack_size ASC
+    ''', (product_id,)).fetchall()
+
+    units = []
+    seen_keys = set()
+
+    # الوحدة الأساسية أولاً
+    base_added = False
+    for u in all_pb_units:
+        conv = float(u.get('conversion_factor') or u.get('pack_size') or 1)
+        if conv == 1 or conv == 1.0:
+            key = (u.get('unit') or original_unit, u.get('barcode') or '')
+            if key not in seen_keys:
+                units.append({
+                    'unit': u.get('unit') or original_unit,
+                    'barcode': u.get('barcode') or original_barcode,
+                    'pack_size': u.get('pack_size') or 1,
+                    'conversion_factor': 1,
+                    'cost_price': str(u.get('cost_price') or original_cost),
+                    'sell_price': str(u.get('sell_price') or original_sell),
+                    'is_sale': u.get('is_sale', True),
+                    'is_purchase': u.get('is_purchase', False)
+                })
+                seen_keys.add(key)
+                base_added = True
+                break
+
+    if not base_added:
+        units.append({
+            'unit': original_unit, 'barcode': original_barcode,
+            'pack_size': 1, 'conversion_factor': 1,
+            'cost_price': original_cost, 'sell_price': original_sell,
+            'is_sale': True, 'is_purchase': False
+        })
+        seen_keys.add((original_unit, original_barcode))
+
+    for u in all_pb_units:
         key = (u.get('unit') or '', u.get('barcode') or '')
-        if key not in seen:
+        if key not in seen_keys:
             units.append({
                 'unit': u.get('unit') or 'حبه',
                 'barcode': u.get('barcode') or '',
@@ -4584,9 +5071,62 @@ def api_periodic_stocktake_scan():
                 'is_purchase': u.get('is_purchase', False),
                 'is_sale': u.get('is_sale', True)
             })
-            seen.add(key)
+            seen_keys.add(key)
 
-    return jsonify({'success': True, 'found': True, 'product': product, 'units': units})
+    matched_unit_index = 0
+    for idx, u in enumerate(units):
+        if u.get('barcode') == barcode:
+            matched_unit_index = idx
+            break
+
+    # التحقق إذا الصنف مجرود مسبقاً في نفس الجلسة
+    already_scanned = db.execute('''
+        SELECT id, counted_stock, selected_unit, batch_no, production_date, expiry_date, created_at
+        FROM periodic_stocktake_items
+        WHERE session_id = %s AND product_id = %s
+        ORDER BY created_at DESC
+    ''', (session_id, product_id)).fetchall()
+
+    return jsonify({
+        'success': True, 'found': True, 'product': product, 'units': units,
+        'matched_unit_index': matched_unit_index,
+        'already_scanned': [dict(r) for r in already_scanned] if already_scanned else []
+    })
+
+@app.route('/api/periodic-stocktake/search-scanned', methods=['GET'])
+@login_required
+def api_periodic_stocktake_search_scanned():
+    """البحث في الأصناف المجرودة في الجلسة الحالية"""
+    db = get_db()
+    session_id = request.args.get('session_id')
+    q = (request.args.get('q') or '').strip()
+    if not session_id:
+        return jsonify({'success': False, 'message': 'الجلسة مطلوبة'}), 400
+
+    items = db.execute('''
+        SELECT
+            psi.id,
+            psi.product_id,
+            psi.barcode,
+            psi.product_name,
+            psi.selected_unit,
+            psi.counted_stock,
+            psi.batch_no,
+            psi.production_date,
+            psi.expiry_date,
+            psi.created_at,
+            psi.pack_size,
+            COALESCE(NULLIF(p.unit, ''), 'حبة') AS primary_unit,
+            (COALESCE(psi.counted_stock, 0) * COALESCE(NULLIF(psi.pack_size, 0), 1)) AS primary_qty
+        FROM periodic_stocktake_items psi
+        LEFT JOIN products p ON p.id = psi.product_id
+        WHERE psi.session_id = %s
+        AND (psi.product_name ILIKE %s OR psi.barcode ILIKE %s)
+        ORDER BY psi.created_at DESC
+        LIMIT 20
+    ''', (session_id, f'%{q}%', f'%{q}%')).fetchall()
+
+    return jsonify({'success': True, 'items': [dict(r) for r in items]})
 
 @app.route('/api/periodic-stocktake/save-item', methods=['POST'])
 @login_required
@@ -4602,6 +5142,7 @@ def api_periodic_stocktake_save_item():
         counted_stock = Decimal(str(request.form.get('counted_stock') or 1))
         production_date = request.form.get('production_date') or None
         expiry_date = request.form.get('expiry_date') or None
+        no_expiry_dates = str(request.form.get('no_expiry_dates') or '').strip().lower() in ('1', 'true', 'yes', 'on')
         batch_no = (request.form.get('batch_no') or '').strip() or None
         notes = (request.form.get('notes') or '').strip() or None
         expected_stock = Decimal(str(request.form.get('expected_stock') or 0))
@@ -4614,12 +5155,19 @@ def api_periodic_stocktake_save_item():
 
         if not session_id or not product_id:
             return jsonify({'success': False, 'message': 'بيانات ناقصة'}), 400
+        
+        if shelf_id and is_periodic_shelf_closed(db, session_id, shelf_id):
+            return jsonify({'success': False, 'message': 'هذا الرف مغلق وتم اعتماد جرده، لا يمكن إضافة أصناف عليه'}), 400
 
-        if not production_date:
-            return jsonify({'success': False, 'message': 'تاريخ الإنتاج مطلوب'}), 400
+        if no_expiry_dates:
+            production_date = None
+            expiry_date = None
+        else:
+            if not production_date:
+                return jsonify({'success': False, 'message': 'تاريخ الإنتاج مطلوب'}), 400
 
-        if not expiry_date:
-            return jsonify({'success': False, 'message': 'تاريخ الانتهاء مطلوب'}), 400
+            if not expiry_date:
+                return jsonify({'success': False, 'message': 'تاريخ الانتهاء مطلوب'}), 400
 
         # Check for duplicate: same product + same shelf in same session
         if shelf_id:
@@ -4708,6 +5256,10 @@ def api_periodic_stocktake_update_item(item_id):
         item = db.execute('SELECT * FROM periodic_stocktake_items WHERE id = %s', (item_id,)).fetchone()
         if not item:
             return jsonify({'success': False, 'message': 'العنصر غير موجود'}), 404
+        item_session_id = int(item['session_id'] or 0)
+        item_shelf_id = int(item['shelf_id']) if item.get('shelf_id') else None
+        if item_shelf_id and is_periodic_shelf_closed(db, item_session_id, item_shelf_id):
+            return jsonify({'success': False, 'message': 'الرف الذي يحتوي هذا الصنف مغلق. افتح قفل الرف أولاً للتعديل'}), 400
 
         data = request.get_json() or {}
         counted_stock = int(data.get('counted_stock', item['counted_stock']))
@@ -4717,6 +5269,13 @@ def api_periodic_stocktake_update_item(item_id):
         notes = data.get('notes', item['notes'])
         display_unit_id = data.get('display_unit_id', item['display_unit_id'])
         shelf_id = data.get('shelf_id', item['shelf_id'])
+        if shelf_id:
+            try:
+                shelf_id = int(shelf_id)
+            except Exception:
+                shelf_id = None
+        if shelf_id and is_periodic_shelf_closed(db, item_session_id, shelf_id):
+            return jsonify({'success': False, 'message': 'لا يمكن نقل/تعديل الصنف داخل رف مغلق. افتح القفل أولاً'}), 400
 
         db.execute('''
             UPDATE periodic_stocktake_items 
@@ -4739,6 +5298,10 @@ def api_periodic_stocktake_delete_item(item_id):
         item = db.execute('SELECT * FROM periodic_stocktake_items WHERE id = %s', (item_id,)).fetchone()
         if not item:
             return jsonify({'success': False, 'message': 'العنصر غير موجود'}), 404
+        item_session_id = int(item['session_id'] or 0)
+        item_shelf_id = int(item['shelf_id']) if item.get('shelf_id') else None
+        if item_shelf_id and is_periodic_shelf_closed(db, item_session_id, item_shelf_id):
+            return jsonify({'success': False, 'message': 'الرف الذي يحتوي هذا الصنف مغلق. افتح قفل الرف أولاً للحذف'}), 400
         db.execute('DELETE FROM periodic_stocktake_items WHERE id = %s', (item_id,))
         db.commit()
         return jsonify({'success': True, 'message': 'تم حذف العنصر'})
@@ -4751,7 +5314,10 @@ def api_periodic_stocktake_delete_item(item_id):
 @login_required
 def api_periodic_stocktake_request_product():
     db = get_db()
-    session_id = request.form.get('session_id')
+    try:
+        session_id = int(request.form.get('session_id') or 0)
+    except Exception:
+        session_id = 0
     barcode = (request.form.get('barcode') or '').strip()
     product_name = (request.form.get('product_name') or '').strip()
     category_id = request.form.get('category_id') or None
@@ -4770,6 +5336,9 @@ def api_periodic_stocktake_request_product():
         display_unit_id = int(display_unit_id)
     if shelf_id:
         shelf_id = int(shelf_id)
+
+    if shelf_id and session_id and is_periodic_shelf_closed(db, session_id, shelf_id):
+        return jsonify({'success': False, 'message': 'هذا الرف مغلق وتم اعتماد جرده، لا يمكن رفع طلبات جديدة عليه'}), 400
 
     def clean_text(v):
         if v is None:
@@ -4914,6 +5483,11 @@ def products():
     search = request.args.get('q', '').strip()
     cat_filter = request.args.get('cat', '', type=str)
     brand_filter = request.args.get('brand', '').strip()
+    auto_open_add = request.args.get('open', '').strip().lower() == 'add'
+    auto_edit_id = request.args.get('edit_id', type=int)
+    return_to = (request.args.get('return_to', '') or '').strip()
+    if not (return_to.startswith('/') and not return_to.startswith('//') and '://' not in return_to):
+        return_to = ''
     
     # Build query
     where = ['p.is_active = TRUE']
@@ -4963,7 +5537,268 @@ def products():
                          products=products_list, categories=categories, units=units_list,
                          brands=brands, page=page, per_page=per_page, total=total, 
                          total_pages=total_pages, search=search, cat_filter=cat_filter,
-                         brand_filter=brand_filter)
+                         brand_filter=brand_filter, auto_open_add=auto_open_add,
+                         auto_edit_id=auto_edit_id, return_to=return_to)
+
+def _normalize_unit_name(value):
+    return (str(value or '')).strip()
+
+def _collect_product_payload_unit_names(data):
+    payload = data or {}
+    unit_names = []
+
+    base_unit = _normalize_unit_name(payload.get('unit'))
+    if base_unit:
+        unit_names.append(base_unit)
+
+    extra_units = payload.get('extra_units') or []
+    for eu in extra_units:
+        if not isinstance(eu, dict):
+            continue
+        unit_name = _normalize_unit_name(eu.get('unit'))
+        if unit_name:
+            unit_names.append(unit_name)
+
+    legacy_units = payload.get('units') or []
+    for lu in legacy_units:
+        if not isinstance(lu, dict):
+            continue
+        unit_name = _normalize_unit_name(lu.get('unit_name') or lu.get('unit'))
+        if unit_name:
+            unit_names.append(unit_name)
+
+    return unit_names
+
+def _ensure_units_registered(db, unit_names):
+    added = 0
+    reactivated = 0
+    seen = set()
+
+    for raw_name in unit_names or []:
+        unit_name = _normalize_unit_name(raw_name)
+        if not unit_name:
+            continue
+        key = unit_name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        existing = db.execute(
+            'SELECT id, is_active FROM units WHERE LOWER(name) = LOWER(%s) ORDER BY id LIMIT 1',
+            (unit_name,)
+        ).fetchone()
+        if existing:
+            if not existing.get('is_active'):
+                db.execute('UPDATE units SET is_active = TRUE WHERE id = %s', (existing['id'],))
+                reactivated += 1
+            continue
+
+        db.execute('INSERT INTO units (name, symbol, is_active) VALUES (%s, %s, TRUE)', (unit_name, ''))
+        added += 1
+
+    return {'added': added, 'reactivated': reactivated}
+
+def _sync_units_catalog_from_products(db):
+    unit_names = []
+
+    rows = db.execute('''
+        SELECT DISTINCT TRIM(unit) AS unit_name
+        FROM products
+        WHERE COALESCE(TRIM(unit), '') <> ''
+    ''').fetchall()
+    unit_names.extend([(r.get('unit_name') or '') for r in rows])
+
+    rows = db.execute('''
+        SELECT DISTINCT TRIM(unit) AS unit_name
+        FROM product_barcodes
+        WHERE COALESCE(TRIM(unit), '') <> ''
+    ''').fetchall()
+    unit_names.extend([(r.get('unit_name') or '') for r in rows])
+
+    try:
+        rows = db.execute('''
+            SELECT DISTINCT TRIM(unit_name) AS unit_name
+            FROM product_units
+            WHERE COALESCE(TRIM(unit_name), '') <> ''
+        ''').fetchall()
+        unit_names.extend([(r.get('unit_name') or '') for r in rows])
+    except Exception:
+        pass
+
+    return _ensure_units_registered(db, unit_names)
+
+def _normalize_barcode_value(value):
+    return (str(value or '')).strip()
+
+def _build_barcode_conflict_message(barcode, owner):
+    product_name = (owner.get('product_name') or '').strip() or 'غير معروف'
+    unit_name = (owner.get('unit_name') or '').strip() or 'غير محددة'
+    return f'الباركود "{barcode}" مسجل مسبقاً للصنف "{product_name}" بوحدة "{unit_name}" ولا يمكن حفظه.'
+
+def _collect_product_payload_barcodes(data):
+    payload = data or {}
+    items = []
+
+    main_barcode = _normalize_barcode_value(payload.get('barcode'))
+    if main_barcode:
+        items.append({
+            'barcode': main_barcode,
+            'unit_name': (payload.get('unit') or 'الوحدة الأساسية')
+        })
+
+    extra_units = payload.get('extra_units') or []
+    for idx, eu in enumerate(extra_units):
+        if not isinstance(eu, dict):
+            continue
+        unit_name = (eu.get('unit') or f'وحدة إضافية {idx + 1}')
+        raw_barcodes = eu.get('barcodes')
+        if isinstance(raw_barcodes, str):
+            raw_barcodes = [raw_barcodes]
+        if not isinstance(raw_barcodes, list):
+            raw_barcodes = []
+        fallback_barcode = eu.get('barcode')
+        if fallback_barcode and not raw_barcodes:
+            raw_barcodes = [fallback_barcode]
+
+        for bc in raw_barcodes:
+            normalized = _normalize_barcode_value(bc)
+            if normalized:
+                items.append({'barcode': normalized, 'unit_name': unit_name})
+
+    # توافق خلفي مع نموذج product_units القديم
+    legacy_units = payload.get('units') or []
+    for idx, lu in enumerate(legacy_units):
+        if not isinstance(lu, dict):
+            continue
+        normalized = _normalize_barcode_value(lu.get('barcode'))
+        if normalized:
+            unit_name = (lu.get('unit_name') or lu.get('unit') or f'وحدة {idx + 1}')
+            items.append({'barcode': normalized, 'unit_name': unit_name})
+
+    return items
+
+def _find_barcode_owner(db, barcode, exclude_product_id=None):
+    normalized = _normalize_barcode_value(barcode)
+    if not normalized:
+        return None
+
+    try:
+        exclude_id = int(exclude_product_id) if exclude_product_id not in (None, '', 0, '0') else None
+    except Exception:
+        exclude_id = None
+
+    extra_filter = ''
+    params = [normalized]
+    if exclude_id:
+        extra_filter = ' AND p.id <> %s'
+        params.append(exclude_id)
+
+    checks = [
+        f'''
+            SELECT p.id AS product_id,
+                   p.name AS product_name,
+                   COALESCE(NULLIF(p.unit, ''), 'الوحدة الأساسية') AS unit_name,
+                   'products' AS source
+            FROM products p
+            WHERE p.is_active = TRUE AND p.barcode = %s{extra_filter}
+            LIMIT 1
+        ''',
+        f'''
+            SELECT p.id AS product_id,
+                   p.name AS product_name,
+                   COALESCE(NULLIF(pb.unit, ''), NULLIF(p.unit, ''), 'الوحدة الأساسية') AS unit_name,
+                   'product_barcodes' AS source
+            FROM product_barcodes pb
+            JOIN products p ON p.id = pb.product_id
+            WHERE p.is_active = TRUE AND pb.barcode = %s{extra_filter}
+            LIMIT 1
+        ''',
+        f'''
+            SELECT p.id AS product_id,
+                   p.name AS product_name,
+                   COALESCE(NULLIF(pb.unit, ''), NULLIF(p.unit, ''), 'الوحدة الأساسية') AS unit_name,
+                   'unit_barcodes' AS source
+            FROM unit_barcodes ub
+            JOIN product_barcodes pb ON pb.id = ub.product_barcode_id
+            JOIN products p ON p.id = pb.product_id
+            WHERE p.is_active = TRUE AND ub.barcode = %s{extra_filter}
+            LIMIT 1
+        ''',
+        f'''
+            SELECT p.id AS product_id,
+                   p.name AS product_name,
+                   COALESCE(NULLIF(pu.unit_name, ''), NULLIF(p.unit, ''), 'الوحدة الأساسية') AS unit_name,
+                   'product_units' AS source
+            FROM product_units pu
+            JOIN products p ON p.id = pu.product_id
+            WHERE p.is_active = TRUE AND pu.barcode = %s{extra_filter}
+            LIMIT 1
+        '''
+    ]
+
+    for query in checks:
+        owner = db.execute(query, tuple(params)).fetchone()
+        if owner:
+            return owner
+    return None
+
+def _validate_product_barcodes(db, data, exclude_product_id=None):
+    barcode_items = _collect_product_payload_barcodes(data)
+    if not barcode_items:
+        return None
+
+    seen = {}
+    for item in barcode_items:
+        bc = item['barcode']
+        first = seen.get(bc)
+        if first:
+            return {
+                'success': False,
+                'duplicate': True,
+                'barcode': bc,
+                'message': f'الباركود "{bc}" مكرر داخل نفس الصنف بين وحدة "{first["unit_name"]}" ووحدة "{item["unit_name"]}".'
+            }
+        seen[bc] = item
+
+    for item in barcode_items:
+        owner = _find_barcode_owner(db, item['barcode'], exclude_product_id=exclude_product_id)
+        if owner:
+            return {
+                'success': False,
+                'duplicate': True,
+                'barcode': item['barcode'],
+                'existing_product_id': owner.get('product_id'),
+                'existing_product_name': owner.get('product_name'),
+                'existing_unit_name': owner.get('unit_name'),
+                'input_unit_name': item.get('unit_name'),
+                'message': _build_barcode_conflict_message(item['barcode'], owner)
+            }
+    return None
+
+@app.route('/api/barcodes/check-duplicate', methods=['POST'])
+@role_required('manager')
+def api_check_barcode_duplicate():
+    db = get_db()
+    data = request.json or {}
+    barcode = _normalize_barcode_value(data.get('barcode'))
+    exclude_product_id = data.get('exclude_product_id')
+
+    if not barcode:
+        return jsonify({'success': True, 'duplicate': False, 'barcode': ''})
+
+    owner = _find_barcode_owner(db, barcode, exclude_product_id=exclude_product_id)
+    if owner:
+        return jsonify({
+            'success': True,
+            'duplicate': True,
+            'barcode': barcode,
+            'existing_product_id': owner.get('product_id'),
+            'existing_product_name': owner.get('product_name'),
+            'existing_unit_name': owner.get('unit_name'),
+            'message': _build_barcode_conflict_message(barcode, owner)
+        })
+
+    return jsonify({'success': True, 'duplicate': False, 'barcode': barcode})
 
 @app.route('/api/products', methods=['GET', 'POST'])
 @role_required('manager')
@@ -4971,60 +5806,75 @@ def api_products():
     db = get_db()
     
     if request.method == 'POST':
-        data = request.json
-        cursor = db.execute('''
-            INSERT INTO products (name, name_en, receipt_name, barcode, product_code, brand, category_id, unit, pack_size, cost_price, sell_price, min_stock, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (
-            data['name'], data.get('name_en'), data.get('receipt_name'),
-            data.get('barcode'), data.get('product_code'), data.get('brand'),
-            data.get('category_id'), data.get('unit', 'حبه'),
-            data.get('pack_size', 1), data.get('cost_price', 0), data.get('sell_price', 0),
-            data.get('min_stock', 0), data.get('notes')
-        ))
-        product_id = db.execute('SELECT lastval()').fetchone()[0]
-        
-        # حفظ الوحدات الإضافية (product_barcodes)
-        extra_units = data.get('extra_units', [])
-        for idx, eu in enumerate(extra_units):
-            if eu.get('unit'):
-                main_bc = eu.get('barcodes', [eu.get('barcode', '')])[0] if eu.get('barcodes') or eu.get('barcode') else ''
-                pb_row = db.execute('''
-                    INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale, sort_order)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id
-                ''', (product_id, main_bc, eu['unit'],
-                      int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
-                      int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
-                      Decimal(str(eu.get('cost_price') or 0)),
-                      Decimal(str(eu.get('sell_price') or 0)),
-                      eu.get('is_purchase', True),
-                      eu.get('is_sale', False),
-                      idx + 2
-                )).fetchone()
-                # Save extra barcodes
-                if pb_row:
-                    for bc in eu.get('barcodes', []):
-                        if bc:
-                            db.execute('INSERT INTO unit_barcodes (product_barcode_id, barcode, is_primary) VALUES (%s, %s, %s)',
-                                      (pb_row['id'], bc, bc == main_bc))
-        
-        # حفظ الوحدات
-        units = data.get('units', [])
-        for unit_data in units:
-            db.execute('''
-                INSERT INTO product_units (product_id, unit_id, conversion_factor, barcode, price, is_default)
-                VALUES (%s, %s, %s, %s, %s, %s)
+        data = request.json or {}
+        _ensure_units_registered(db, _collect_product_payload_unit_names(data))
+        conflict = _validate_product_barcodes(db, data)
+        if conflict:
+            return jsonify(conflict), 400
+        try:
+            cursor = db.execute('''
+                INSERT INTO products (name, name_en, receipt_name, barcode, product_code, brand, category_id, unit, pack_size, cost_price, sell_price, min_stock, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
-                product_id, unit_data['unit_id'],
-                unit_data.get('conversion_factor', 1),
-                unit_data.get('barcode', ''),
-                unit_data.get('price', 0),
-                1 if unit_data.get('is_default') else 0
+                data['name'], data.get('name_en'), data.get('receipt_name'),
+                data.get('barcode'), data.get('product_code'), data.get('brand'),
+                data.get('category_id') or None, data.get('unit', 'حبه'),
+                data.get('pack_size', 1), data.get('cost_price', 0), data.get('sell_price', 0),
+                data.get('min_stock', 0), data.get('notes')
             ))
-        
-        db.commit()
-        return jsonify({'success': True, 'message': 'تم إضافة الصنف', 'id': product_id})
+            product_id = db.execute('SELECT lastval() AS id').fetchone()['id']
+            
+            # حفظ الوحدات الإضافية (product_barcodes)
+            extra_units = data.get('extra_units', [])
+            for idx, eu in enumerate(extra_units):
+                if eu.get('unit'):
+                    main_bc = eu.get('barcodes', [eu.get('barcode', '')])[0] if eu.get('barcodes') or eu.get('barcode') else ''
+                    pb_row = db.execute('''
+                        INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale, sort_order)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                    ''', (product_id, main_bc, eu['unit'],
+                          int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
+                          int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
+                          Decimal(str(eu.get('cost_price') or 0)),
+                          Decimal(str(eu.get('sell_price') or 0)),
+                          eu.get('is_purchase', True),
+                          eu.get('is_sale', False),
+                          idx + 2
+                    )).fetchone()
+                    # Save extra barcodes
+                    if pb_row:
+                        for bc in eu.get('barcodes', []):
+                            if bc:
+                                db.execute('INSERT INTO unit_barcodes (product_barcode_id, barcode, is_primary) VALUES (%s, %s, %s)',
+                                          (pb_row['id'], bc, bc == main_bc))
+            
+            # حفظ الوحدات
+            units = data.get('units', [])
+            for unit_data in units:
+                db.execute('''
+                    INSERT INTO product_units (product_id, unit_id, conversion_factor, barcode, price, is_default)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                ''', (
+                    product_id, unit_data['unit_id'],
+                    unit_data.get('conversion_factor', 1),
+                    unit_data.get('barcode', ''),
+                    unit_data.get('price', 0),
+                    1 if unit_data.get('is_default') else 0
+                ))
+            
+            db.commit()
+            return jsonify({'success': True, 'message': 'تم إضافة الصنف', 'id': product_id})
+        except Exception as e:
+            db.rollback()
+            import traceback
+            traceback.print_exc()
+            err_msg = str(e)
+            if 'unique' in err_msg.lower() or 'duplicate' in err_msg.lower():
+                return jsonify({'success': False, 'message': 'الباركود أو البيانات مكررة'}), 400
+            if 'foreign key' in err_msg.lower() or 'violates foreign key' in err_msg.lower():
+                return jsonify({'success': False, 'message': 'القسم المحدد غير موجود'}), 400
+            return jsonify({'success': False, 'message': f'خطأ في حفظ الصنف: {err_msg}'}), 500
     
     products_list = db.execute('''
         SELECT p.*, c.name as category_name
@@ -5035,69 +5885,93 @@ def api_products():
     ''').fetchall()
     return jsonify([dict(p) for p in products_list])
 
-@app.route('/api/products/<int:id>', methods=['PUT', 'DELETE'])
+@app.route('/api/products/<int:id>', methods=['GET', 'PUT', 'DELETE'])
 @role_required('manager')
 def api_product(id):
     db = get_db()
+
+    if request.method == 'GET':
+        product = db.execute('''
+            SELECT id, name, brand, product_code, barcode, category_id, unit, cost_price, sell_price
+            FROM products
+            WHERE id = %s AND is_active = TRUE
+            LIMIT 1
+        ''', (id,)).fetchone()
+        if not product:
+            return jsonify({'success': False, 'message': 'الصنف غير موجود'}), 404
+        return jsonify({'success': True, 'product': dict(product)})
     
     if request.method == 'PUT':
-        data = request.json
-        db.execute('''
-            UPDATE products SET name=%s, name_en=%s, receipt_name=%s, barcode=%s,
-                   category_id=%s, unit=%s, min_stock=%s, notes=%s
-            WHERE id=%s
-        ''', (
-            data['name'], data.get('name_en'), data.get('receipt_name'),
-            data.get('barcode'), data.get('category_id'), data.get('unit'),
-            data.get('min_stock', 0), data.get('notes'), id
-        ))
-        
-        # تحديث الوحدات الإضافية (product_barcodes)
-        extra_units = data.get('extra_units')
-        if extra_units is not None:
-            db.execute('DELETE FROM unit_barcodes WHERE product_barcode_id IN (SELECT id FROM product_barcodes WHERE product_id = %s)', (id,))
-            db.execute('DELETE FROM product_barcodes WHERE product_id = %s', (id,))
-            for idx, eu in enumerate(extra_units):
-                if eu.get('unit'):
-                    main_bc = eu.get('barcodes', [''])[0] if eu.get('barcodes') else ''
-                    pb_row = db.execute('''
-                        INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale, sort_order)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        RETURNING id
-                    ''', (id, main_bc, eu['unit'],
-                          int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
-                          int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
-                          Decimal(str(eu.get('cost_price') or 0)),
-                          Decimal(str(eu.get('sell_price') or 0)),
-                          eu.get('is_purchase', True),
-                          eu.get('is_sale', False),
-                          idx + 2
-                    )).fetchone()
-                    if pb_row:
-                        for bc in eu.get('barcodes', []):
-                            if bc:
-                                db.execute('INSERT INTO unit_barcodes (product_barcode_id, barcode, is_primary) VALUES (%s, %s, %s)',
-                                          (pb_row['id'], bc, bc == main_bc))
-        
-        # تحديث الوحدات القديمة
-        units = data.get('units', [])
-        if units:
-            # حذف الوحدات القديمة وإضافة الجديدة
-            db.execute('DELETE FROM product_units WHERE product_id = %s', (id,))
-            for unit_data in units:
-                db.execute('''
-                    INSERT INTO product_units (product_id, unit_id, conversion_factor, barcode, price, is_default)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                ''', (
-                    id, unit_data['unit_id'],
-                    unit_data.get('conversion_factor', 1),
-                    unit_data.get('barcode', ''),
-                    unit_data.get('price', 0),
-                    1 if unit_data.get('is_default') else 0
-                ))
-        
-        db.commit()
-        return jsonify({'success': True, 'message': 'تم تحديث الصنف'})
+        data = request.json or {}
+        _ensure_units_registered(db, _collect_product_payload_unit_names(data))
+        conflict = _validate_product_barcodes(db, data, exclude_product_id=id)
+        if conflict:
+            return jsonify(conflict), 400
+        try:
+            db.execute('''
+                UPDATE products SET name=%s, name_en=%s, receipt_name=%s, barcode=%s,
+                       category_id=%s, unit=%s, min_stock=%s, notes=%s
+                WHERE id=%s
+            ''', (
+                data['name'], data.get('name_en'), data.get('receipt_name'),
+                data.get('barcode'), data.get('category_id') or None, data.get('unit'),
+                data.get('min_stock', 0), data.get('notes'), id
+            ))
+            
+            # تحديث الوحدات الإضافية (product_barcodes)
+            extra_units = data.get('extra_units')
+            if extra_units is not None:
+                db.execute('DELETE FROM unit_barcodes WHERE product_barcode_id IN (SELECT id FROM product_barcodes WHERE product_id = %s)', (id,))
+                db.execute('DELETE FROM product_barcodes WHERE product_id = %s', (id,))
+                for idx, eu in enumerate(extra_units):
+                    if eu.get('unit'):
+                        main_bc = eu.get('barcodes', [''])[0] if eu.get('barcodes') else ''
+                        pb_row = db.execute('''
+                            INSERT INTO product_barcodes (product_id, barcode, unit, pack_size, conversion_factor, cost_price, sell_price, is_purchase, is_sale, sort_order)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            RETURNING id
+                        ''', (id, main_bc, eu['unit'],
+                              int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
+                              int(eu.get('conversion_factor') or eu.get('pack_size') or 1),
+                              Decimal(str(eu.get('cost_price') or 0)),
+                              Decimal(str(eu.get('sell_price') or 0)),
+                              eu.get('is_purchase', True),
+                              eu.get('is_sale', False),
+                              idx + 2
+                        )).fetchone()
+                        if pb_row:
+                            for bc in eu.get('barcodes', []):
+                                if bc:
+                                    db.execute('INSERT INTO unit_barcodes (product_barcode_id, barcode, is_primary) VALUES (%s, %s, %s)',
+                                              (pb_row['id'], bc, bc == main_bc))
+            
+            # تحديث الوحدات القديمة
+            units = data.get('units', [])
+            if units:
+                # حذف الوحدات القديمة وإضافة الجديدة
+                db.execute('DELETE FROM product_units WHERE product_id = %s', (id,))
+                for unit_data in units:
+                    db.execute('''
+                        INSERT INTO product_units (product_id, unit_id, conversion_factor, barcode, price, is_default)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    ''', (
+                        id, unit_data['unit_id'],
+                        unit_data.get('conversion_factor', 1),
+                        unit_data.get('barcode', ''),
+                        unit_data.get('price', 0),
+                        1 if unit_data.get('is_default') else 0
+                    ))
+            
+            db.commit()
+            return jsonify({'success': True, 'message': 'تم تحديث الصنف'})
+        except Exception as e:
+            db.rollback()
+            import traceback
+            traceback.print_exc()
+            err_msg = str(e)
+            if 'unique' in err_msg.lower() or 'duplicate' in err_msg.lower():
+                return jsonify({'success': False, 'message': 'الباركود أو البيانات مكررة'}), 400
+            return jsonify({'success': False, 'message': f'خطأ في تحديث الصنف: {err_msg}'}), 500
     
     elif request.method == 'DELETE':
         db.execute('UPDATE products SET is_active=FALSE WHERE id=%s', (id,))

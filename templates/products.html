@@ -182,7 +182,7 @@
             <div class="p-5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-t-2xl">
                 <h3 id="modalTitle" class="text-xl font-bold text-white">إضافة صنف جديد</h3>
             </div>
-            <form id="productForm" onsubmit="saveProduct(event)" class="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+            <form id="productForm" onsubmit="saveProduct(event)" onkeydown="if(event.key==='Enter'&&event.target.tagName==='INPUT'&&event.target.type!=='submit'){event.preventDefault();}" class="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
                 <input type="hidden" id="productId" value="">
                 
                 <!-- بيانات أساسية -->
@@ -355,7 +355,7 @@
                 <!-- Add Unit Form -->
                 <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">➕ إضافة وحدة جديدة</h4>
-                    <form id="addUnitForm" onsubmit="addUnit(event)" class="grid grid-cols-5 gap-2">
+                    <form id="addUnitForm" onsubmit="addUnit(event)" onkeydown="if(event.key==='Enter'&&event.target.tagName==='INPUT'&&event.target.type!=='submit'){event.preventDefault();}" class="grid grid-cols-5 gap-2">
                         <input type="hidden" id="unitProductId">
                         <input type="text" id="newUnitName" placeholder="الوحدة (كرتون، باكت...)" required
                                class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg">
@@ -379,6 +379,43 @@
 
 <script>
 let currentUnitsProductId = null;
+const AUTO_OPEN_ADD = {{ 'true' if auto_open_add else 'false' }};
+const AUTO_EDIT_ID = {{ auto_edit_id if auto_edit_id else 'null' }};
+const RETURN_TO = {{ (return_to or '')|tojson }};
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (AUTO_EDIT_ID) {
+        openEditFromDeepLink(AUTO_EDIT_ID);
+    } else if (AUTO_OPEN_ADD) {
+        openAddModal();
+    }
+});
+
+async function openEditFromDeepLink(productId) {
+    try {
+        const resp = await safeFetch(`/api/products/${productId}`);
+        const data = await resp.json();
+        if (!data.success || !data.product) {
+            throw new Error(data.message || 'Product not found');
+        }
+        const p = data.product;
+        await editProduct(
+            p.id,
+            p.name || '',
+            p.brand || '',
+            p.product_code || '',
+            p.barcode || '',
+            p.category_id || '',
+            p.unit || 'حبه',
+            p.cost_price || 0,
+            p.sell_price || 0
+        );
+    } catch (e) {
+        console.error('openEditFromDeepLink error:', e);
+        showToast('تعذر فتح تعديل الصنف مباشرة', 'error', 4000);
+        if (AUTO_OPEN_ADD) openAddModal();
+    }
+}
 
 async function showUnits(productId, productName) {
     currentUnitsProductId = productId;
@@ -447,9 +484,9 @@ async function addUnit(e) {
         sell_price: parseFloat(document.getElementById('newUnitSellPrice').value) || 0,
     };
     try {
-        const resp = await fetch(`/api/products/${productId}/barcodes`, {
+        const resp = await safeFetch(`/api/products/${productId}/barcodes`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', ...csrfHeaders()},
             body: JSON.stringify(data)
         });
         const r = await resp.json();
@@ -461,15 +498,132 @@ async function addUnit(e) {
             document.getElementById('newUnitSellPrice').value = '';
             showUnits(productId, document.getElementById('unitsProductName').textContent);
         } else {
-            alert(r.message || 'خطأ');
+            showToast(r.message || 'خطأ', 'error', 4000);
         }
-    } catch(e) { alert('خطأ في الاتصال'); }
+    } catch(e) { showToast('خطأ في الاتصال', 'error', 4000); }
 }
 
 let pUnitCount = 0;
 let scanTargetInput = null;
 let scannerHtml5 = null;
 const pUnitOpts = `<option value="">-- اختر --</option>{% for u in units %}<option value="{{ u.name }}">{{ u.name }}</option>{% endfor %}`;
+
+function clearCustomUnitOptions(selectEl) {
+    if (!selectEl) return;
+    selectEl.querySelectorAll('option[data-custom="1"]').forEach(opt => opt.remove());
+}
+
+function ensureSelectHasUnitOption(selectEl, unitValue) {
+    const value = String(unitValue || '').trim();
+    if (!selectEl || !value) return;
+    const hasOption = Array.from(selectEl.options || []).some(opt => opt.value === value);
+    if (hasOption) return;
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = `${value} (مخصصة)`;
+    opt.dataset.custom = '1';
+    selectEl.appendChild(opt);
+}
+
+function normalizeBarcodeValue(v) {
+    return String(v || '').trim();
+}
+
+function getEditProductId() {
+    const raw = document.getElementById('productId')?.value || '';
+    const id = parseInt(raw, 10);
+    return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function getUnitNameForBarcodeInput(inputEl) {
+    if (!inputEl) return 'غير محددة';
+    if (inputEl.id === 'productBarcode') {
+        return document.getElementById('productUnit')?.value || 'الوحدة الأساسية';
+    }
+    const container = inputEl.closest('div[id^="pUnit_"]');
+    if (container) {
+        return container.querySelector('.pu-unit')?.value || 'وحدة إضافية';
+    }
+    return 'غير محددة';
+}
+
+async function checkBarcodeDuplicateOnServer(barcode, unitName) {
+    const normalized = normalizeBarcodeValue(barcode);
+    if (!normalized) return { duplicate: false };
+    try {
+        const resp = await safeFetch('/api/barcodes/check-duplicate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify({
+                barcode: normalized,
+                unit_name: unitName || '',
+                exclude_product_id: getEditProductId()
+            })
+        });
+        return await resp.json();
+    } catch (e) {
+        console.error('checkBarcodeDuplicateOnServer error:', e);
+        return { duplicate: false };
+    }
+}
+
+async function validateSingleBarcodeInput(inputEl) {
+    if (!inputEl) return false;
+    const barcode = normalizeBarcodeValue(inputEl.value);
+    if (!barcode) {
+        inputEl.classList.remove('border-red-500');
+        return false;
+    }
+    const unitName = getUnitNameForBarcodeInput(inputEl);
+    const result = await checkBarcodeDuplicateOnServer(barcode, unitName);
+    if (result && result.duplicate) {
+        inputEl.classList.add('border-red-500');
+        showToast(result.message || `الباركود "${barcode}" مسجل مسبقاً`, 'error', 7000);
+        inputEl.focus();
+        if (typeof inputEl.select === 'function') inputEl.select();
+        return true;
+    }
+    inputEl.classList.remove('border-red-500');
+    return false;
+}
+
+function validateLocalDuplicateBarcodes(data) {
+    const seen = new Map();
+    const pushBarcode = (barcode, unitName) => {
+        const normalized = normalizeBarcodeValue(barcode);
+        if (!normalized) return null;
+        if (seen.has(normalized)) {
+            const firstUnit = seen.get(normalized);
+            return `الباركود "${normalized}" مكرر داخل نفس الصنف بين وحدة "${firstUnit}" ووحدة "${unitName}".`;
+        }
+        seen.set(normalized, unitName || 'غير محددة');
+        return null;
+    };
+
+    const mainDup = pushBarcode(data.barcode, data.unit || 'الوحدة الأساسية');
+    if (mainDup) return mainDup;
+
+    const extraUnits = data.extra_units || [];
+    for (let i = 0; i < extraUnits.length; i += 1) {
+        const eu = extraUnits[i] || {};
+        const unitName = eu.unit || `وحدة إضافية ${i + 1}`;
+        const barcodes = eu.barcodes || [];
+        for (let j = 0; j < barcodes.length; j += 1) {
+            const err = pushBarcode(barcodes[j], unitName);
+            if (err) return err;
+        }
+    }
+
+    return null;
+}
+
+function ensureBaseBarcodeHook() {
+    const baseBarcodeInput = document.getElementById('productBarcode');
+    if (!baseBarcodeInput || baseBarcodeInput.dataset.dupHooked) return;
+    baseBarcodeInput.dataset.dupHooked = '1';
+    baseBarcodeInput.addEventListener('input', function() { baseBarcodeInput.classList.remove('border-red-500'); });
+    baseBarcodeInput.addEventListener('blur', function() { validateSingleBarcodeInput(baseBarcodeInput); });
+}
 
 function getPrevUnitName(n) {
     // الوحدة السابقة (التي تحتها)
@@ -568,7 +722,11 @@ function addProductUnit(unit='', barcode='', conv='1', cost='', sell='', isPurch
         </div>
     `;
     document.getElementById('productExtraUnits').appendChild(div);
-    if (unit) div.querySelector('.pu-unit').value = unit;
+    if (unit) {
+        const unitSelect = div.querySelector('.pu-unit');
+        ensureSelectHasUnitOption(unitSelect, unit);
+        unitSelect.value = unit;
+    }
     
     if (barcode) addUnitBarcode(n, barcode, true);
     extraBarcodes.forEach(b => addUnitBarcode(n, b, false));
@@ -597,6 +755,8 @@ function addUnitBarcode(unitNum, barcode, isPrimary) {
     inp.dir = 'ltr';
     inp.value = barcode;
     inp.placeholder = 'الباركود';
+    inp.addEventListener('input', function() { inp.classList.remove('border-red-500'); });
+    inp.addEventListener('blur', function() { validateSingleBarcodeInput(inp); });
     
     const camBtn = document.createElement('button');
     camBtn.type = 'button';
@@ -673,6 +833,7 @@ function applyScan() {
     const val = document.getElementById('scannerManualInput').value.trim();
     if (val && scanTargetInput) {
         scanTargetInput.value = val;
+        validateSingleBarcodeInput(scanTargetInput);
     }
     closeScannerModal();
 }
@@ -691,7 +852,10 @@ function openAddModal() {
     document.getElementById('productCode').value = '';
     document.getElementById('productBarcode').value = '';
     document.getElementById('productCategory').value = '';
-    document.getElementById('productUnit').value = 'حبه';
+    const baseUnitSelect = document.getElementById('productUnit');
+    clearCustomUnitOptions(baseUnitSelect);
+    ensureSelectHasUnitOption(baseUnitSelect, 'حبه');
+    baseUnitSelect.value = 'حبه';
     document.getElementById('productCostPrice').value = '0';
     document.getElementById('productSellPrice').value = '0';
     document.getElementById('productMinStock').value = '0';
@@ -699,9 +863,11 @@ function openAddModal() {
     document.getElementById('productExtraUnits').innerHTML = '';
     pUnitCount = 0;
     document.getElementById('productModal').classList.remove('hidden');
+    ensureBaseBarcodeHook();
 }
 
 async function editProduct(id, name, brand, code, barcode, categoryId, unit, cost, sell) {
+    ensureBaseBarcodeHook();
     document.getElementById('modalTitle').textContent = 'تعديل الصنف';
     document.getElementById('productId').value = id;
     document.getElementById('productName').value = name;
@@ -709,7 +875,11 @@ async function editProduct(id, name, brand, code, barcode, categoryId, unit, cos
     document.getElementById('productCode').value = code || '';
     document.getElementById('productBarcode').value = barcode || '';
     document.getElementById('productCategory').value = categoryId || '';
-    document.getElementById('productUnit').value = unit || 'حبه';
+    const baseUnitSelect = document.getElementById('productUnit');
+    const productUnitValue = unit || 'حبه';
+    clearCustomUnitOptions(baseUnitSelect);
+    ensureSelectHasUnitOption(baseUnitSelect, productUnitValue);
+    baseUnitSelect.value = productUnitValue;
     document.getElementById('productCostPrice').value = cost || 0;
     document.getElementById('productSellPrice').value = sell || 0;
     document.getElementById('productMinStock').value = '0';
@@ -740,8 +910,10 @@ async function saveProduct(e) {
     e.preventDefault();
     const id = document.getElementById('productId').value;
     const extraUnits = getProductExtraUnits();
+    const name = document.getElementById('productName').value.trim();
+    if (!name) { showToast('اسم الصنف مطلوب', 'error', 4000); return; }
     const data = {
-        name: document.getElementById('productName').value,
+        name: name,
         brand: document.getElementById('productBrand').value || null,
         product_code: document.getElementById('productCode').value || null,
         barcode: document.getElementById('productBarcode').value || null,
@@ -753,25 +925,48 @@ async function saveProduct(e) {
         notes: document.getElementById('productNotes')?.value || null,
         extra_units: extraUnits
     };
+    const localDupMessage = validateLocalDuplicateBarcodes(data);
+    if (localDupMessage) {
+        showToast(localDupMessage, 'error', 6000);
+        return;
+    }
     try {
-        const resp = await fetch(id ? `/api/products/${id}` : '/api/products', {
+        const resp = await safeFetch(id ? `/api/products/${id}` : '/api/products', {
             method: id ? 'PUT' : 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
             body: JSON.stringify(data)
         });
-        const r = await resp.json();
-        if (r.success) location.reload();
-        else alert(r.message || 'خطأ');
-    } catch(e) { alert('خطأ في الاتصال'); }
+        let r;
+        try { r = await resp.json(); } catch(jsonErr) {
+            showToast('خطأ في السيرفر (HTTP ' + resp.status + '). أعد تحميل الصفحة وحاول مرة أخرى.', 'error', 5000);
+            return;
+        }
+        if (r.success) {
+            showToast(r.message || 'تم حفظ الصنف بنجاح', 'success');
+            setTimeout(() => {
+                if (RETURN_TO) {
+                    window.location.href = RETURN_TO;
+                    return;
+                }
+                location.reload();
+            }, 800);
+        } else {
+            showToast(r.message || 'خطأ غير معروف', 'error', 5000);
+        }
+    } catch(e) { console.error('saveProduct error:', e); showToast('خطأ في الاتصال بالسيرفر', 'error', 5000); }
 }
 
 async function deleteProduct(id, name) {
     if (!confirm('حذف "' + name + '"؟')) return;
     try {
-        const r = await (await fetch('/api/products/' + id, { method: 'DELETE' })).json();
-        if (r.success) location.reload();
-        else alert(r.message);
-    } catch(e) { alert('خطأ'); }
+        const r = await (await safeFetch('/api/products/' + id, { method: 'DELETE', headers: csrfHeaders() })).json();
+        if (r.success) {
+            showToast('تم حذف الصنف', 'success');
+            setTimeout(() => location.reload(), 800);
+        } else {
+            showToast(r.message || 'خطأ في الحذف', 'error', 4000);
+        }
+    } catch(e) { showToast('خطأ في الاتصال', 'error', 4000); }
 }
 </script>
 {% endblock %}

@@ -33,14 +33,14 @@
                     </div>
                 </div>
                 <div class="flex gap-1">
-                    <button onclick="openEditModal({{ unit.id }}, '{{ unit.name }}', '{{ unit.symbol or '' }}')"
+                    <button onclick='openEditModal({{ unit.id }}, {{ (unit.name or "")|tojson }}, {{ (unit.symbol or "")|tojson }})'
                             class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="تعديل">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
                                   d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                         </svg>
                     </button>
-                    <button onclick="deleteUnit({{ unit.id }}, '{{ unit.name }}')"
+                    <button onclick='deleteUnit({{ unit.id }}, {{ (unit.name or "")|tojson }})'
                             class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="حذف">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -131,32 +131,39 @@ async function saveUnit(e) {
     e.preventDefault();
     
     const id = document.getElementById('unitId').value;
+    const name = (document.getElementById('unitName').value || '').trim();
+    if (!name) {
+        showToast('اسم الوحدة مطلوب', 'error', 3500);
+        return;
+    }
     const data = {
-        name: document.getElementById('unitName').value,
-        symbol: document.getElementById('unitSymbol').value,
+        name: name,
+        symbol: (document.getElementById('unitSymbol').value || '').trim(),
     };
     
     const url = id ? `/api/units/${id}` : '/api/units';
     const method = id ? 'PUT' : 'POST';
     
     try {
-        const response = await fetch(url, {
+        const response = await safeFetch(url, {
             method: method,
             headers: { 
                 'Content-Type': 'application/json',
-                'X-CSRF-Token': '{{ csrf_token() }}'
+                ...csrfHeaders()
             },
             body: JSON.stringify(data)
         });
         
         const result = await response.json();
         if (result.success) {
+            showToast(result.message || 'تم الحفظ', 'success', 1200);
             location.reload();
         } else {
-            alert(result.message || 'حدث خطأ');
+            showToast(result.message || 'حدث خطأ', 'error', 4500);
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        console.error('saveUnit error:', error);
+        showToast('خطأ في الاتصال بالسيرفر', 'error', 4500);
     }
 }
 
@@ -164,20 +171,24 @@ async function deleteUnit(id, name) {
     if (!confirm(`هل أنت متأكد من حذف "${name}"؟`)) return;
     
     try {
-        const response = await fetch(`/api/units/${id}`, { 
+        const response = await safeFetch(`/api/units/${id}`, { 
             method: 'DELETE',
-            headers: { 'X-CSRF-Token': '{{ csrf_token() }}' }
+            headers: { ...csrfHeaders() }
         });
         const result = await response.json();
         if (result.success) {
+            showToast(result.message || 'تم الحذف', 'success', 1200);
             location.reload();
         } else {
-            alert(result.message || 'حدث خطأ');
+            showToast(result.message || 'حدث خطأ', 'error', 4500);
         }
     } catch (error) {
-        alert('حدث خطأ في الاتصال');
+        console.error('deleteUnit error:', error);
+        showToast('خطأ في الاتصال بالسيرفر', 'error', 4500);
     }
 }
 </script>
 {% endblock %}
+
+
 
