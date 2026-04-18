@@ -481,11 +481,11 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">تاريخ الإنتاج</label>
-                    <input type="date" id="editItemProd" class="form-input">
+                    <input type="date" id="editItemProd" class="form-input" onblur="validateDetailDatePair('editItemProd')" onkeydown="handleDetailDateKeydown(event, 'editItemProd')">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">تاريخ الانتهاء</label>
-                    <input type="date" id="editItemExp" class="form-input">
+                    <input type="date" id="editItemExp" class="form-input" onblur="validateDetailDatePair('editItemExp')" onkeydown="handleDetailDateKeydown(event, 'editItemExp')">
                 </div>
             </div>
             <div>
@@ -824,6 +824,42 @@ function closeItemEditModal() {
     modal.classList.remove('flex');
 }
 
+function validateDetailDatePair(focusId = 'editItemProd') {
+    const prodInput = document.getElementById('editItemProd');
+    const expInput = document.getElementById('editItemExp');
+    const focusInput = document.getElementById(focusId) || prodInput;
+    if (!prodInput || !expInput) return true;
+
+    const productionDate = (prodInput.value || '').trim();
+    const expiryDate = (expInput.value || '').trim();
+    if (!productionDate || !expiryDate) {
+        prodInput.classList.remove('border-red-400');
+        expInput.classList.remove('border-red-400');
+        return true;
+    }
+
+    if (productionDate > expiryDate) {
+        prodInput.classList.add('border-red-400');
+        expInput.classList.add('border-red-400');
+        showToast('تاريخ الإنتاج يجب أن يكون قبل أو يساوي تاريخ الانتهاء', 'warning');
+        setTimeout(() => {
+            focusInput.focus();
+        }, 0);
+        return false;
+    }
+
+    prodInput.classList.remove('border-red-400');
+    expInput.classList.remove('border-red-400');
+    return true;
+}
+
+function handleDetailDateKeydown(e, focusId) {
+    if (e.key !== 'Tab' && e.key !== 'Enter') return;
+    if (!validateDetailDatePair(focusId)) {
+        e.preventDefault();
+    }
+}
+
 async function openItemEditModal(itemId) {
     try {
         const resp = await fetch(`/api/periodic-stocktake/item/${itemId}`, { headers: csrfHeaders() });
@@ -869,8 +905,7 @@ async function saveItemEditFromDetail() {
         return;
     }
 
-    if (productionDate && expiryDate && productionDate > expiryDate) {
-        showToast('تاريخ الإنتاج يجب أن يكون قبل أو يساوي تاريخ الانتهاء', 'warning');
+    if (!validateDetailDatePair('editItemProd')) {
         return;
     }
 

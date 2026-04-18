@@ -22,7 +22,9 @@
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الأصناف</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الطلبات</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">المنشئ</th>
-                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">تاريخ الإنشاء</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">وقت الفتح</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">وقت الإغلاق</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">مدة الجرد</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الإجراءات</th>
                     </tr>
                 </thead>
@@ -45,14 +47,30 @@
                             <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">{{ s.requests_count }} طلب</span>
                         </td>
                         <td class="py-3 px-4 text-gray-600 dark:text-gray-400">{{ s.created_by_name or 'غير معروف' }}</td>
-                        <td class="py-3 px-4 text-gray-500 text-sm">{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '' }}</td>
+                        <td class="py-3 px-4 text-gray-500 text-sm">{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '-' }}</td>
+                        <td class="py-3 px-4 text-gray-500 text-sm">{{ s.closed_at.strftime('%Y-%m-%d %H:%M') if s.closed_at else '—' }}</td>
+                        <td class="py-3 px-4 text-sm">
+                            {% if s.duration_seconds is not none %}
+                                {% set secs = s.duration_seconds|int %}
+                                {% set days = secs // 86400 %}
+                                {% set hours = (secs % 86400) // 3600 %}
+                                {% set mins = (secs % 3600) // 60 %}
+                                <span class="px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+                                    {% if days %}{{ days }} يوم {% endif %}
+                                    {% if hours %}{{ hours }} ساعة {% endif %}
+                                    {{ mins }} دقيقة
+                                </span>
+                            {% else %}
+                                <span class="text-gray-400">—</span>
+                            {% endif %}
+                        </td>
                         <td class="py-3 px-4">
                             <a href="/periodic-stocktake/review/{{ s.id }}" class="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-medium">عرض التفاصيل</a>
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="py-8 text-center text-gray-400">لا توجد جلسات جرد بعد</td>
+                        <td colspan="10" class="py-8 text-center text-gray-400">لا توجد جلسات جرد بعد</td>
                     </tr>
                     {% endfor %}
                 </tbody>

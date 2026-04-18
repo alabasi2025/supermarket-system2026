@@ -47,10 +47,19 @@ input[type="number"].qty-no-spinner {
                 {% if session.user_id == 1 %}
                 <button id="startSessionBtn" onclick="startSession()" class="btn btn-primary {% if open_session %}hidden{% endif %}">▶️ بدء جلسة جرد</button>
                 {% endif %}
-                <div id="currentSessionBadge" class="{% if not open_session %}hidden{% endif %} flex items-center gap-3">
-                    <span class="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300 text-sm font-bold">
-                        جلسة مفتوحة: <span id="currentSessionTitle">{{ open_session.title if open_session else '' }}</span>
-                    </span>
+                <div id="currentSessionBadge" class="{% if not open_session %}hidden{% endif %} flex items-center gap-3 flex-wrap">
+                    <div class="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                        <div class="text-sm font-bold">
+                            جلسة مفتوحة: <span id="currentSessionTitle">{{ open_session.title if open_session else '' }}</span>
+                        </div>
+                        <div id="currentSessionMeta"
+                             class="text-xs mt-1 opacity-90"
+                             data-started-at="{{ open_session.created_at_iso if open_session else '' }}">
+                            {% if open_session %}
+                                بدأت: {{ open_session.created_at_label }}
+                            {% endif %}
+                        </div>
+                    </div>
                     {% if session.user_id == 1 %}
                     <button onclick="closeSession()" class="px-4 py-2 rounded-xl bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/20 dark:text-red-300 text-sm font-bold transition-colors">🔒 إغلاق الجلسة</button>
                     {% endif %}
@@ -190,11 +199,11 @@ input[type="number"].qty-no-spinner {
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الإنتاج <span class="text-red-500">*</span></label>
-                            <input type="text" id="existingProductionDate" name="production_date" class="form-input font-mono text-center date-field" dir="ltr" placeholder="1-1-2026 أو 2026-01-01" maxlength="10" onblur="parseDateField(this)" onkeydown="dateKeyHandler(event, this)" required>
+                            <input type="text" id="existingProductionDate" name="production_date" class="form-input font-mono text-center date-field" dir="ltr" placeholder="1-1-2026 أو 2026-01-01" maxlength="10" onblur="parseDateField(this); validateDatePairByIds('existingProductionDate','existingExpiryDate','existingProductionDate')" onkeydown="dateKeyHandler(event, this, 'existingProductionDate', 'existingExpiryDate')" required>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الانتهاء <span class="text-red-500">*</span></label>
-                            <input type="text" id="existingExpiryDate" name="expiry_date" class="form-input font-mono text-center date-field" dir="ltr" placeholder="31-12-2026 أو 2026-12-31" maxlength="10" onblur="parseDateField(this)" onkeydown="dateKeyHandler(event, this)" required>
+                            <input type="text" id="existingExpiryDate" name="expiry_date" class="form-input font-mono text-center date-field" dir="ltr" placeholder="31-12-2026 أو 2026-12-31" maxlength="10" onblur="parseDateField(this); validateDatePairByIds('existingProductionDate','existingExpiryDate','existingExpiryDate')" onkeydown="dateKeyHandler(event, this, 'existingProductionDate', 'existingExpiryDate')" required>
                         </div>
                         <div class="md:col-span-2">
                             <label class="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
@@ -471,11 +480,11 @@ input[type="number"].qty-no-spinner {
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الإنتاج</label>
-                    <input type="text" id="requestProductionDate" name="production_date" class="form-input font-mono text-center date-field" dir="ltr" placeholder="1-1-2026 أو 2026-01-01" maxlength="10" onblur="parseDateField(this)" onkeydown="dateKeyHandler(event, this)">
+                    <input type="text" id="requestProductionDate" name="production_date" class="form-input font-mono text-center date-field" dir="ltr" placeholder="1-1-2026 أو 2026-01-01" maxlength="10" onblur="parseDateField(this); validateDatePairByIds('requestProductionDate','requestExpiryDate','requestProductionDate')" onkeydown="dateKeyHandler(event, this, 'requestProductionDate', 'requestExpiryDate')">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الانتهاء</label>
-                    <input type="text" id="requestExpiryDate" name="expiry_date" class="form-input font-mono text-center date-field" dir="ltr" placeholder="31-12-2026 أو 2026-12-31" maxlength="10" onblur="parseDateField(this)" onkeydown="dateKeyHandler(event, this)">
+                    <input type="text" id="requestExpiryDate" name="expiry_date" class="form-input font-mono text-center date-field" dir="ltr" placeholder="31-12-2026 أو 2026-12-31" maxlength="10" onblur="parseDateField(this); validateDatePairByIds('requestProductionDate','requestExpiryDate','requestExpiryDate')" onkeydown="dateKeyHandler(event, this, 'requestProductionDate', 'requestExpiryDate')">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">رقم الباتش</label>
@@ -519,7 +528,63 @@ let lastMissingBarcode = '';
 let lastFoundProduct = null;
 let lastFoundUnits = [];
 let displayUnitsData = {};
+let currentSessionStartedAt = {{ (open_session.created_at_iso if open_session else none)|tojson }};
+let currentSessionDurationTimer = null;
 const PERIODIC_LOCATION_STATE_KEY = 'periodic_stocktake_location_state';
+
+function formatSessionDateTime(value) {
+    if (!value) return '-';
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleString('ar-SA', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+    });
+}
+
+function formatSessionDuration(totalSeconds) {
+    const s = Math.max(0, parseInt(totalSeconds || 0, 10) || 0);
+    const days = Math.floor(s / 86400);
+    const hours = Math.floor((s % 86400) / 3600);
+    const minutes = Math.floor((s % 3600) / 60);
+    const parts = [];
+    if (days) parts.push(`${days} يوم`);
+    if (hours) parts.push(`${hours} ساعة`);
+    parts.push(`${minutes} دقيقة`);
+    return parts.join(' و ');
+}
+
+function updateCurrentSessionMetaText() {
+    const meta = document.getElementById('currentSessionMeta');
+    if (!meta) return;
+    if (!currentSessionStartedAt) {
+        meta.textContent = '';
+        return;
+    }
+    const started = new Date(currentSessionStartedAt);
+    if (isNaN(started.getTime())) {
+        meta.textContent = `بدأت: ${currentSessionStartedAt}`;
+        return;
+    }
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - started.getTime()) / 1000));
+    meta.textContent = `بدأت: ${formatSessionDateTime(currentSessionStartedAt)} — المدة: ${formatSessionDuration(elapsedSeconds)}`;
+}
+
+function setCurrentSessionMeta(sessionObj) {
+    const meta = document.getElementById('currentSessionMeta');
+    if (!meta) return;
+    currentSessionStartedAt = sessionObj?.created_at_iso || sessionObj?.created_at || meta.dataset.startedAt || null;
+    meta.dataset.startedAt = currentSessionStartedAt || '';
+    updateCurrentSessionMetaText();
+    if (currentSessionDurationTimer) clearInterval(currentSessionDurationTimer);
+    if (currentSessionStartedAt) {
+        currentSessionDurationTimer = setInterval(updateCurrentSessionMetaText, 60000);
+    }
+}
 
 function persistLocationSelection() {
     const duId = document.getElementById('displayUnitSelect')?.value || '';
@@ -849,8 +914,9 @@ function parseDateField(input) {
     input.classList.add('border-emerald-400');
 }
 
-function validateProductionExpiryRange(productionInput, expiryInput) {
+function validateProductionExpiryRange(productionInput, expiryInput, options = {}) {
     if (!productionInput || !expiryInput) return true;
+    const focusInput = options.focusInput || productionInput;
     const productionDate = (productionInput.value || '').trim();
     const expiryDate = (expiryInput.value || '').trim();
     if (!productionDate || !expiryDate) return true;
@@ -860,15 +926,46 @@ function validateProductionExpiryRange(productionInput, expiryInput) {
         productionInput.classList.add('border-red-400');
         expiryInput.classList.add('border-red-400');
         showToast('تاريخ الإنتاج يجب أن يكون قبل أو يساوي تاريخ الانتهاء', 'warning');
-        productionInput.focus();
-        if (productionInput.select) productionInput.select();
+        if (focusInput) {
+            focusInput.focus();
+            if (focusInput.select) focusInput.select();
+        }
+        return false;
+    }
+    if (productionDate && expiryDate && productionDate <= expiryDate) {
+        productionInput.classList.remove('border-red-400');
+        expiryInput.classList.remove('border-red-400');
+        productionInput.classList.add('border-emerald-400');
+        expiryInput.classList.add('border-emerald-400');
+    }
+    return true;
+}
+
+function validateDatePairByIds(productionId, expiryId, focusId = null) {
+    const productionInput = document.getElementById(productionId);
+    const expiryInput = document.getElementById(expiryId);
+    const focusInput = focusId ? document.getElementById(focusId) : productionInput;
+    const isValid = validateProductionExpiryRange(productionInput, expiryInput, { focusInput });
+    if (!isValid && focusInput) {
+        setTimeout(() => {
+            focusInput.focus();
+            if (focusInput.select) focusInput.select();
+        }, 0);
         return false;
     }
     return true;
 }
 
 // عند الضغط على Enter: حوّل التاريخ وانتقل للحقل التالي
-function dateKeyHandler(e, input) {
+function dateKeyHandler(e, input, productionId = null, expiryId = null) {
+    if ((e.key === 'Enter' || e.key === 'Tab') && productionId && expiryId) {
+        parseDateField(input);
+        if (!validateDatePairByIds(productionId, expiryId, input.id)) {
+            e.preventDefault();
+            return;
+        }
+    }
+
     if (e.key === 'Enter') {
         e.preventDefault();
         parseDateField(input);
@@ -983,6 +1080,7 @@ async function startSession() {
         document.getElementById('startSessionBtn').classList.add('hidden');
         document.getElementById('currentSessionBadge').classList.remove('hidden');
         document.getElementById('currentSessionTitle').textContent = data.session.title;
+        setCurrentSessionMeta(data.session || {});
         await loadDisplayUnitsData(true);
     } else {
         showToast(data.message || 'تعذر بدء جلسة الجرد', 'error');
@@ -1635,6 +1733,9 @@ async function closeSession() {
     });
     const data = await resp.json();
     if (data.success) {
+        if (currentSessionDurationTimer) clearInterval(currentSessionDurationTimer);
+        currentSessionDurationTimer = null;
+        currentSessionStartedAt = null;
         showToast('تم إغلاق جلسة الجرد ✅', 'success');
         window.location.reload();
     } else {
@@ -1781,6 +1882,9 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCameras();
     bindAutoSelectNumberInputs();
     bindNoWheelNumberInputs();
+    setCurrentSessionMeta({
+        created_at_iso: {{ (open_session.created_at_iso if open_session else none)|tojson }}
+    });
     document.getElementById('existingUnit')?.addEventListener('change', updateExistingUnitMeta);
 });
 
@@ -1858,9 +1962,9 @@ async function editItem(id) {
             <div><label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">الكمية</label>
             <input type="number" id="editQty_${id}" value="${i.counted_stock}" min="1" step="1" data-autoselect="1" data-no-wheel="1" class="form-input qty-no-spinner text-center font-bold" onfocus="this.select()" onclick="this.select()" onwheel="this.blur()" oninput="this.value=Math.floor(Math.abs(this.value))||1"></div>
             <div><label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">تاريخ الإنتاج</label>
-            <input type="text" id="editProd_${id}" value="${i.production_date||''}" class="form-input font-mono text-center" dir="ltr" placeholder="1-1-2026" onblur="parseDateField(this)" onkeydown="dateKeyHandler(event, this)"></div>
+            <input type="text" id="editProd_${id}" value="${i.production_date||''}" class="form-input font-mono text-center" dir="ltr" placeholder="1-1-2026" onblur="parseDateField(this); validateDatePairByIds('editProd_${id}','editExp_${id}','editProd_${id}')" onkeydown="dateKeyHandler(event, this, 'editProd_${id}', 'editExp_${id}')"></div>
             <div><label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">تاريخ الانتهاء</label>
-            <input type="text" id="editExp_${id}" value="${i.expiry_date||''}" class="form-input font-mono text-center" dir="ltr" placeholder="31-12-2026" onblur="parseDateField(this)" onkeydown="dateKeyHandler(event, this)"></div>
+            <input type="text" id="editExp_${id}" value="${i.expiry_date||''}" class="form-input font-mono text-center" dir="ltr" placeholder="31-12-2026" onblur="parseDateField(this); validateDatePairByIds('editProd_${id}','editExp_${id}','editExp_${id}')" onkeydown="dateKeyHandler(event, this, 'editProd_${id}', 'editExp_${id}')"></div>
             <div><label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">رقم الباتش</label>
             <input type="text" id="editBatch_${id}" value="${i.batch_no||''}" class="form-input"></div>
             <div><label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">ملاحظة</label>

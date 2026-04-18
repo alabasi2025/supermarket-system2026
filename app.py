@@ -4338,6 +4338,35 @@ def api_periodic_stocktake_unlock_shelf():
 # الجرد الدوري (Periodic Stocktake) — نسخة من الجرد الأولي
 # ═══════════════════════════════════════════════════════════════
 
+def _serialize_periodic_session(row):
+    if not row:
+        return None
+    data = dict(row)
+    created_at = data.get('created_at')
+    closed_at = data.get('closed_at')
+
+    created_iso = created_at.isoformat() if created_at and hasattr(created_at, 'isoformat') else (str(created_at) if created_at else None)
+    closed_iso = closed_at.isoformat() if closed_at and hasattr(closed_at, 'isoformat') else (str(closed_at) if closed_at else None)
+    created_label = created_at.strftime('%Y-%m-%d %H:%M') if created_at and hasattr(created_at, 'strftime') else (str(created_at) if created_at else '')
+    closed_label = closed_at.strftime('%Y-%m-%d %H:%M') if closed_at and hasattr(closed_at, 'strftime') else (str(closed_at) if closed_at else '')
+
+    duration_seconds = None
+    if created_at and hasattr(created_at, 'strftime'):
+        end_at = closed_at if (closed_at and hasattr(closed_at, 'strftime')) else datetime.now()
+        try:
+            duration_seconds = max(0, int((end_at - created_at).total_seconds()))
+        except Exception:
+            duration_seconds = None
+
+    data['created_at_iso'] = created_iso
+    data['closed_at_iso'] = closed_iso
+    data['created_at_label'] = created_label
+    data['closed_at_label'] = closed_label
+    data['duration_seconds'] = duration_seconds
+    data['created_at'] = created_iso
+    data['closed_at'] = closed_iso
+    return data
+
 @app.route('/periodic-stocktake')
 @login_required
 def periodic_stocktake_page():
@@ -4351,6 +4380,8 @@ def periodic_stocktake_page():
         WHERE s.status = 'open'
         ORDER BY s.id DESC LIMIT 1
     ''').fetchone()
+    if open_session:
+        open_session = _serialize_periodic_session(open_session)
 
     recent_items = []
     recent_requests = []
@@ -4441,7 +4472,8 @@ def api_create_periodic_stocktake_session():
         ORDER BY id DESC LIMIT 1
     ''').fetchone()
     if existing:
-        return jsonify({'success': True, 'session_id': existing['id'], 'session': dict(existing), 'message': 'توجد جلسة جرد مفتوحة بالفعل'})
+        session_data = _serialize_periodic_session(existing)
+        return jsonify({'success': True, 'session_id': existing['id'], 'session': session_data, 'message': 'توجد جلسة جرد مفتوحة بالفعل'})
 
     row = db.execute('''
         INSERT INTO periodic_stocktake_sessions (title, notes, status, created_by)
@@ -4449,7 +4481,8 @@ def api_create_periodic_stocktake_session():
         RETURNING *
     ''', (title, notes, session['user_id'])).fetchone()
     db.commit()
-    return jsonify({'success': True, 'session_id': row['id'], 'session': dict(row)})
+    session_data = _serialize_periodic_session(row)
+    return jsonify({'success': True, 'session_id': row['id'], 'session': session_data})
 
 @app.route('/api/periodic-stocktake/session/current')
 @login_required
@@ -4460,7 +4493,8 @@ def api_current_periodic_stocktake_session():
         WHERE status = 'open'
         ORDER BY id DESC LIMIT 1
     ''').fetchone()
-    return jsonify({'success': True, 'session': dict(open_session) if open_session else None})
+    session_data = _serialize_periodic_session(open_session) if open_session else None
+    return jsonify({'success': True, 'session': session_data})
 
 @app.route('/api/periodic-stocktake/session/close', methods=['POST'])
 @login_required
@@ -4483,9 +4517,15 @@ def api_close_periodic_stocktake_session():
     if stocktake_session['status'] == 'closed':
         return jsonify({'success': False, 'message': 'الجلسة مغلقة بالفعل'}), 400
     
-    db.execute('UPDATE periodic_stocktake_sessions SET status = %s, closed_at = NOW() WHERE id = %s', ('closed', session_id))
+    closed_session = db.execute('''
+        UPDATE periodic_stocktake_sessions
+        SET status = %s, closed_at = NOW()
+        WHERE id = %s
+        RETURNING *
+    ''', ('closed', session_id)).fetchone()
     db.commit()
-    return jsonify({'success': True, 'message': 'تم إغلاق جلسة الجرد'})
+    session_data = _serialize_periodic_session(closed_session) if closed_session else None
+    return jsonify({'success': True, 'message': 'تم إغلاق جلسة الجرد', 'session': session_data})
 
 @app.route('/periodic-stocktake/review')
 @login_required
@@ -4495,7 +4535,8 @@ def periodic_stocktake_review_page():
     sessions = db.execute('''
         SELECT s.*, u.username as created_by_name,
                (SELECT COUNT(*) FROM periodic_stocktake_items WHERE session_id = s.id) as items_count,
-               (SELECT COUNT(*) FROM periodic_stocktake_product_requests WHERE session_id = s.id) as requests_count
+               (SELECT COUNT(*) FROM periodic_stocktake_product_requests WHERE session_id = s.id) as requests_count,
+               EXTRACT(EPOCH FROM (COALESCE(s.closed_at, NOW()) - s.created_at))::BIGINT as duration_seconds
         FROM periodic_stocktake_sessions s
         LEFT JOIN users u ON u.id = s.created_by
         ORDER BY s.id DESC
@@ -7271,7 +7312,7 @@ def receive_invoice(invoice_id):
 # المخزون
 # ═══════════════════════════════════════════════════════════════
 
-@app.route('/inventory')
+@app.route('/inventory', strict_slashes=False)
 @role_required('manager', 'warehouse')
 def inventory():
     db = get_db()
