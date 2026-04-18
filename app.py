@@ -11,6 +11,7 @@ import os
 import json
 import secrets
 import uuid
+import time
 import psycopg2
 import psycopg2.extras
 from decimal import Decimal
@@ -886,12 +887,168 @@ def has_perm(module_code, action='view'):
     perms = get_user_permissions(session.get('user_id', 0))
     return perms.get(module_code, {}).get(action, False)
 
+AUDIT_REDACT_TOKENS = (
+    'password', 'pass', 'pin', 'token', 'secret', 'csrf',
+    'authorization', 'cookie', 'session'
+)
+
+def _audit_key_is_sensitive(key):
+    k = (str(key or '')).lower()
+    return any(token in k for token in AUDIT_REDACT_TOKENS)
+
+def _sanitize_for_audit(value, depth=0):
+    if depth > 4:
+        return '...'
+    if value is None:
+        return None
+    if isinstance(value, (int, float, bool)):
+        return value
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value if len(value) <= 500 else (value[:500] + '...')
+    if isinstance(value, dict):
+        out = {}
+        count = 0
+        for k, v in value.items():
+            if count >= 50:
+                out['__truncated__'] = True
+                break
+            if _audit_key_is_sensitive(k):
+                out[str(k)] = '***'
+            else:
+                out[str(k)] = _sanitize_for_audit(v, depth + 1)
+            count += 1
+        return out
+    if isinstance(value, (list, tuple, set)):
+        arr = list(value)
+        cleaned = [_sanitize_for_audit(v, depth + 1) for v in arr[:50]]
+        if len(arr) > 50:
+            cleaned.append('...')
+        return cleaned
+    return str(value)
+
+def _request_form_as_dict():
+    out = {}
+    for key in request.form.keys():
+        vals = request.form.getlist(key)
+        out[key] = vals if len(vals) > 1 else request.form.get(key)
+    return out
+
+def _request_files_meta():
+    if not request.files:
+        return None
+    files_meta = {}
+    for key in request.files.keys():
+        files = request.files.getlist(key)
+        files_meta[key] = [f.filename for f in files if getattr(f, 'filename', None)]
+    return files_meta
+
+def _extract_request_body_for_audit():
+    if request.method in ('GET', 'HEAD', 'OPTIONS'):
+        return None
+    body = None
+    if request.is_json:
+        body = request.get_json(silent=True)
+    elif request.form:
+        body = _request_form_as_dict()
+    files = _request_files_meta()
+    if files:
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            body = {'payload': body}
+        body['files'] = files
+    return _sanitize_for_audit(body)
+
+def _extract_record_id_from_request():
+    view_args = request.view_args or {}
+    for k, v in view_args.items():
+        if 'id' in str(k).lower():
+            try:
+                return int(v)
+            except Exception:
+                return None
+    return None
+
+def _classify_audit_action(status_code):
+    path = request.path or ''
+    method = (request.method or '').upper()
+    if path == '/login' and method == 'POST':
+        return 'LOGIN_SUCCESS' if status_code < 400 else 'LOGIN_FAILED'
+    if path == '/logout':
+        return 'LOGOUT'
+    if method == 'POST':
+        return 'ADD'
+    if method in ('PUT', 'PATCH'):
+        return 'EDIT'
+    if method == 'DELETE':
+        return 'DELETE'
+    return 'VIEW'
+
+def _should_skip_audit():
+    path = request.path or ''
+    if path.startswith('/static/') or path == '/favicon.ico':
+        return True
+    if request.method == 'OPTIONS':
+        return True
+    return False
+
+@app.before_request
+def track_request_start_time():
+    g.audit_started_at = time.perf_counter()
+
 @app.after_request
 def add_no_cache_headers(response):
     if 'text/html' in response.content_type:
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+    return response
+
+@app.after_request
+def audit_after_request(response):
+    try:
+        if _should_skip_audit():
+            return response
+
+        started = getattr(g, 'audit_started_at', None)
+        duration_ms = None
+        if started is not None:
+            duration_ms = int((time.perf_counter() - started) * 1000)
+
+        user_id = session.get('user_id')
+        if getattr(g, 'logout_user_id', None):
+            user_id = g.logout_user_id
+
+        payload = {
+            'method': request.method,
+            'path': request.path,
+            'endpoint': request.endpoint,
+            'status_code': response.status_code,
+            'query': _sanitize_for_audit(dict(request.args or {})),
+            'body': _extract_request_body_for_audit(),
+            'view_args': _sanitize_for_audit(request.view_args or {}),
+            'duration_ms': duration_ms,
+            'user_agent': _sanitize_for_audit(request.headers.get('User-Agent')),
+            'username': session.get('username'),
+            'display_name': session.get('display_name'),
+            'role': session.get('role')
+        }
+
+        log_action(
+            action=_classify_audit_action(response.status_code),
+            table_name=request.endpoint or request.path,
+            record_id=_extract_record_id_from_request(),
+            old_data=None,
+            new_data=payload,
+            user_id_override=user_id,
+            use_direct=True
+        )
+    except Exception:
+        pass
     return response
 
 @app.before_request
@@ -1010,6 +1167,7 @@ def force_change_password():
 
 @app.route('/logout')
 def logout():
+    g.logout_user_id = session.get('user_id')
     session.clear()
     flash('تم تسجيل الخروج', 'info')
     return redirect(url_for('login'))
@@ -1524,24 +1682,106 @@ def api_notifications_read_all():
 # سجل التدقيق
 # ═══════════════════════════════════════════════════════════════
 
-def log_action(action, table_name=None, record_id=None, old_data=None, new_data=None):
+def _insert_audit_row_direct(user_id, action, table_name, record_id, old_data_json, new_data_json, ip):
+    conn = None
+    cur = None
+    try:
+        conn = psycopg2.connect(
+            host=app.config['PG_HOST'],
+            port=app.config['PG_PORT'],
+            database=app.config['PG_DATABASE'],
+            user=app.config['PG_USER'],
+            password=app.config['PG_PASSWORD']
+        )
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,
+                action TEXT NOT NULL,
+                table_name TEXT,
+                record_id INTEGER,
+                old_data TEXT,
+                new_data TEXT,
+                ip_address TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cur.execute('''
+            INSERT INTO audit_log (user_id, action, table_name, record_id, old_data, new_data, ip_address)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (user_id, action, table_name, record_id, old_data_json, new_data_json, ip))
+        conn.commit()
+    except Exception:
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+    finally:
+        try:
+            if cur:
+                cur.close()
+        except Exception:
+            pass
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+def log_action(action, table_name=None, record_id=None, old_data=None, new_data=None, user_id_override=None, use_direct=True):
     """تسجيل إجراء في سجل التدقيق"""
-    db = get_db()
-    user_id = session.get('user_id')
+    try:
+        user_id = user_id_override if user_id_override is not None else session.get('user_id')
+    except Exception:
+        user_id = user_id_override
+
     ip = request.remote_addr if request else None
+    old_data_json = json.dumps(_sanitize_for_audit(old_data), ensure_ascii=False) if old_data is not None else None
+    new_data_json = json.dumps(_sanitize_for_audit(new_data), ensure_ascii=False) if new_data is not None else None
+
+    if use_direct:
+        _insert_audit_row_direct(user_id, action, table_name, record_id, old_data_json, new_data_json, ip)
+        return
+
+    db = get_db()
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            table_name TEXT,
+            record_id INTEGER,
+            old_data TEXT,
+            new_data TEXT,
+            ip_address TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     db.execute('''
         INSERT INTO audit_log (user_id, action, table_name, record_id, old_data, new_data, ip_address)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
-    ''', (user_id, action, table_name, record_id, 
-          json.dumps(old_data, ensure_ascii=False) if old_data else None,
-          json.dumps(new_data, ensure_ascii=False) if new_data else None,
-          ip))
+    ''', (user_id, action, table_name, record_id, old_data_json, new_data_json, ip))
     db.commit()
 
 @app.route('/api/audit-log')
 @role_required('manager')
 def api_audit_log():
     db = get_db()
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            table_name TEXT,
+            record_id INTEGER,
+            old_data TEXT,
+            new_data TEXT,
+            ip_address TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     logs = db.execute('''
         SELECT a.*, u.display_name as user_name
         FROM audit_log a
@@ -4116,13 +4356,19 @@ def periodic_stocktake_page():
     recent_requests = []
     if open_session:
         recent_items = db.execute('''
-            SELECT psi.*, du.name as display_unit_name, sh.name as shelf_name
+            SELECT psi.*,
+                   COALESCE(NULLIF(p.name, ''), psi.product_name) AS current_product_name,
+                   du.name as display_unit_name, sh.name as shelf_name
             FROM periodic_stocktake_items psi
+            LEFT JOIN products p ON p.id = psi.product_id
             LEFT JOIN display_units du ON du.id = psi.display_unit_id
             LEFT JOIN shelves sh ON sh.id = psi.shelf_id
             WHERE psi.session_id = %s
             ORDER BY psi.id DESC LIMIT 20
         ''', (open_session['id'],)).fetchall()
+        for item in recent_items:
+            if item.get('current_product_name'):
+                item['product_name'] = item['current_product_name']
         recent_requests = db.execute('''
             SELECT r.*, c.name as category_name
             FROM periodic_stocktake_product_requests r
@@ -4142,10 +4388,13 @@ def api_periodic_stocktake_recent():
     if not session_id:
         return jsonify({'items': []})
     items = db.execute('''
-        SELECT psi.id, psi.product_name, psi.barcode, psi.selected_unit, psi.counted_stock,
+        SELECT psi.id,
+               COALESCE(NULLIF(p.name, ''), psi.product_name) AS product_name,
+               psi.barcode, psi.selected_unit, psi.counted_stock,
                psi.production_date, psi.expiry_date, psi.batch_no, psi.notes,
                du.name as display_unit_name, sh.name as shelf_name
         FROM periodic_stocktake_items psi
+        LEFT JOIN products p ON p.id = psi.product_id
         LEFT JOIN display_units du ON du.id = psi.display_unit_id
         LEFT JOIN shelves sh ON sh.id = psi.shelf_id
         WHERE psi.session_id = %s
@@ -4438,6 +4687,11 @@ def api_periodic_edit_request(request_id):
         return jsonify({'success': False, 'message': 'لا يمكن تعديل طلب تم معالجته'}), 400
     
     data = request.get_json() or {}
+    production_date = data.get('production_date') or req['production_date']
+    expiry_date = data.get('expiry_date') or req['expiry_date']
+    date_validation_error = _validate_production_expiry_dates(production_date, expiry_date)
+    if date_validation_error:
+        return jsonify({'success': False, 'message': date_validation_error}), 400
     
     db.execute('''
         UPDATE periodic_stocktake_product_requests SET
@@ -4455,8 +4709,8 @@ def api_periodic_edit_request(request_id):
         int(data.get('pack_size') or req['pack_size'] or 1),
         Decimal(str(data['cost_price'])) if data.get('cost_price') else req['cost_price'],
         Decimal(str(data['sell_price'])) if data.get('sell_price') else req['sell_price'],
-        data.get('production_date') or req['production_date'],
-        data.get('expiry_date') or req['expiry_date'],
+        production_date,
+        expiry_date,
         data.get('batch_no') or req['batch_no'],
         data.get('notes') or req['notes'],
         request_id
@@ -5108,7 +5362,7 @@ def api_periodic_stocktake_search_scanned():
             psi.id,
             psi.product_id,
             psi.barcode,
-            psi.product_name,
+            COALESCE(NULLIF(p.name, ''), psi.product_name) AS product_name,
             psi.selected_unit,
             psi.counted_stock,
             psi.batch_no,
@@ -5121,12 +5375,38 @@ def api_periodic_stocktake_search_scanned():
         FROM periodic_stocktake_items psi
         LEFT JOIN products p ON p.id = psi.product_id
         WHERE psi.session_id = %s
-        AND (psi.product_name ILIKE %s OR psi.barcode ILIKE %s)
+        AND (COALESCE(NULLIF(p.name, ''), psi.product_name) ILIKE %s OR psi.barcode ILIKE %s)
         ORDER BY psi.created_at DESC
         LIMIT 20
     ''', (session_id, f'%{q}%', f'%{q}%')).fetchall()
 
     return jsonify({'success': True, 'items': [dict(r) for r in items]})
+
+def _parse_ymd_date_for_validation(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if hasattr(value, 'year') and hasattr(value, 'month') and hasattr(value, 'day') and not isinstance(value, str):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text[:10], '%Y-%m-%d').date()
+    except Exception:
+        return None
+
+def _validate_production_expiry_dates(production_date, expiry_date):
+    if not production_date or not expiry_date:
+        return None
+    prod = _parse_ymd_date_for_validation(production_date)
+    exp = _parse_ymd_date_for_validation(expiry_date)
+    if not prod or not exp:
+        return None
+    if prod > exp:
+        return 'تاريخ الإنتاج لا يمكن أن يكون بعد تاريخ الانتهاء'
+    return None
 
 @app.route('/api/periodic-stocktake/save-item', methods=['POST'])
 @login_required
@@ -5168,6 +5448,10 @@ def api_periodic_stocktake_save_item():
 
             if not expiry_date:
                 return jsonify({'success': False, 'message': 'تاريخ الانتهاء مطلوب'}), 400
+
+            date_validation_error = _validate_production_expiry_dates(production_date, expiry_date)
+            if date_validation_error:
+                return jsonify({'success': False, 'message': date_validation_error}), 400
 
         # Check for duplicate: same product + same shelf in same session
         if shelf_id:
@@ -5277,6 +5561,10 @@ def api_periodic_stocktake_update_item(item_id):
         if shelf_id and is_periodic_shelf_closed(db, item_session_id, shelf_id):
             return jsonify({'success': False, 'message': 'لا يمكن نقل/تعديل الصنف داخل رف مغلق. افتح القفل أولاً'}), 400
 
+        date_validation_error = _validate_production_expiry_dates(production_date, expiry_date)
+        if date_validation_error:
+            return jsonify({'success': False, 'message': date_validation_error}), 400
+
         db.execute('''
             UPDATE periodic_stocktake_items 
             SET counted_stock = %s, production_date = %s, expiry_date = %s, 
@@ -5355,6 +5643,10 @@ def api_periodic_stocktake_request_product():
 
     if not barcode:
         return jsonify({'success': False, 'message': 'الباركود مطلوب'}), 400
+
+    date_validation_error = _validate_production_expiry_dates(production_date, expiry_date)
+    if date_validation_error:
+        return jsonify({'success': False, 'message': date_validation_error}), 400
 
     image_path = None
     attachment_path = None

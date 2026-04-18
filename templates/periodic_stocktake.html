@@ -849,6 +849,24 @@ function parseDateField(input) {
     input.classList.add('border-emerald-400');
 }
 
+function validateProductionExpiryRange(productionInput, expiryInput) {
+    if (!productionInput || !expiryInput) return true;
+    const productionDate = (productionInput.value || '').trim();
+    const expiryDate = (expiryInput.value || '').trim();
+    if (!productionDate || !expiryDate) return true;
+    if (productionDate > expiryDate) {
+        productionInput.classList.remove('border-emerald-400');
+        expiryInput.classList.remove('border-emerald-400');
+        productionInput.classList.add('border-red-400');
+        expiryInput.classList.add('border-red-400');
+        showToast('تاريخ الإنتاج يجب أن يكون قبل أو يساوي تاريخ الانتهاء', 'warning');
+        productionInput.focus();
+        if (productionInput.select) productionInput.select();
+        return false;
+    }
+    return true;
+}
+
 // عند الضغط على Enter: حوّل التاريخ وانتقل للحقل التالي
 function dateKeyHandler(e, input) {
     if (e.key === 'Enter') {
@@ -904,9 +922,17 @@ function bindAutoSelectNumberInputs() {
 function bindNoWheelNumberInputs() {
     document.addEventListener('wheel', (e) => {
         const el = e.target;
-        if (!el || !el.matches || !el.matches('input[type="number"][data-no-wheel="1"]')) return;
+        if (!el || !el.matches || !el.matches('input[type="number"]')) return;
         e.preventDefault();
     }, { passive: false });
+
+    document.addEventListener('keydown', (e) => {
+        const el = e.target;
+        if (!el || !el.matches || !el.matches('input[type="number"]')) return;
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+        }
+    });
 }
 
 function csrfHeaders(extra = {}) {
@@ -1288,8 +1314,10 @@ async function processBarcode(barcode) {
 
 async function saveExistingItem() {
     const form = document.getElementById('existingItemForm');
-    const productionDate = document.getElementById('existingProductionDate').value;
-    const expiryDate = document.getElementById('existingExpiryDate').value;
+    const productionInput = document.getElementById('existingProductionDate');
+    const expiryInput = document.getElementById('existingExpiryDate');
+    const productionDate = productionInput.value;
+    const expiryDate = expiryInput.value;
     const noExpiryDates = !!document.getElementById('existingNoExpiryDates')?.checked;
     
     const duId = document.getElementById('displayUnitSelect').value;
@@ -1310,8 +1338,15 @@ async function saveExistingItem() {
     }
     if (!noExpiryDates && !expiryDate) {
         showToast('تاريخ الانتهاء مطلوب', 'warning');
-        document.getElementById('existingExpiryDate').focus();
+        expiryInput.focus();
         return;
+    }
+    if (!noExpiryDates) {
+        if (productionDate) parseDateField(productionInput);
+        if (expiryDate) parseDateField(expiryInput);
+        if (!validateProductionExpiryRange(productionInput, expiryInput)) {
+            return;
+        }
     }
     
     document.getElementById('existingDisplayUnitId').value = duId;
@@ -1376,6 +1411,13 @@ function closeRequestModal() {
 
 async function submitRequest() {
     const form = document.getElementById('requestForm');
+    const requestProductionInput = document.getElementById('requestProductionDate');
+    const requestExpiryInput = document.getElementById('requestExpiryDate');
+    if ((requestProductionInput.value || '').trim()) parseDateField(requestProductionInput);
+    if ((requestExpiryInput.value || '').trim()) parseDateField(requestExpiryInput);
+    if (!validateProductionExpiryRange(requestProductionInput, requestExpiryInput)) {
+        return;
+    }
     const fd = new FormData(form);
     fd.append('session_id', currentSessionId || '');
     fd.append('csrf_token', document.getElementById('csrfToken').value);
@@ -1790,7 +1832,7 @@ async function viewItem(id) {
     const i = data.item;
     const html = `
         <div class="space-y-3 text-sm">
-            <div class="flex justify-between"><span class="text-gray-500">الصنف:</span><span class="font-bold">${i.product_name || i.product_name_db || '-'}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">الصنف:</span><span class="font-bold">${i.product_name_db || i.product_name || '-'}</span></div>
             <div class="flex justify-between"><span class="text-gray-500">الباركود:</span><span class="font-mono">${i.barcode || '-'}</span></div>
             <div class="flex justify-between"><span class="text-gray-500">الكمية:</span><span class="font-bold text-indigo-600">${i.counted_stock}</span></div>
             <div class="flex justify-between"><span class="text-gray-500">الوحدة:</span><span>${i.selected_unit || '-'}</span></div>
@@ -1829,10 +1871,17 @@ async function editItem(id) {
 }
 
 async function saveEditItem(id) {
+    const editProdInput = document.getElementById(`editProd_${id}`);
+    const editExpInput = document.getElementById(`editExp_${id}`);
+    if ((editProdInput.value || '').trim()) parseDateField(editProdInput);
+    if ((editExpInput.value || '').trim()) parseDateField(editExpInput);
+    if (!validateProductionExpiryRange(editProdInput, editExpInput)) {
+        return;
+    }
     const body = {
         counted_stock: parseInt(document.getElementById(`editQty_${id}`).value) || 1,
-        production_date: document.getElementById(`editProd_${id}`).value,
-        expiry_date: document.getElementById(`editExp_${id}`).value,
+        production_date: editProdInput.value,
+        expiry_date: editExpInput.value,
         batch_no: document.getElementById(`editBatch_${id}`).value,
         notes: document.getElementById(`editNotes_${id}`).value,
     };

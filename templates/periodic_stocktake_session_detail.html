@@ -124,11 +124,13 @@
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">الباتش</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">ملاحظة</th>
                         <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">🎤</th>
+                        <th class="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-400">إجراءات</th>
                     </tr>
                 </thead>
                 <tbody id="itemsBody">
                     {% for item in items %}
                     <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors item-row"
+                        data-item-id="{{ item.id }}"
                         data-expiry="{{ item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '9999-12-31' }}"
                         data-unit="{{ item.display_unit_name or '' }}"
                         data-shelf="{{ item.shelf_name or '' }}"
@@ -160,10 +162,17 @@
                             <audio controls class="h-8 w-32"><source src="/{{ item.voice_note_path }}"></audio>
                             {% else %}-{% endif %}
                         </td>
+                        <td class="py-3 px-4">
+                            <button type="button"
+                                    onclick="openItemEditModal({{ item.id }})"
+                                    class="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-700 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 text-xs font-bold transition-colors">
+                                ✏️ تعديل
+                            </button>
+                        </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="13" class="py-8 text-center text-gray-400">لا توجد أصناف مسجلة</td>
+                        <td colspan="14" class="py-8 text-center text-gray-400">لا توجد أصناف مسجلة</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -449,6 +458,48 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<div id="editItemModal" class="fixed inset-0 z-[9999] hidden items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div class="w-full max-w-lg card shadow-2xl overflow-hidden">
+        <div class="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+            <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">✏️ تعديل صنف مجرود</h3>
+            <button type="button" onclick="closeItemEditModal()" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500">✕</button>
+        </div>
+        <div class="p-4 space-y-3">
+            <input type="hidden" id="editItemId">
+            <div class="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-3">
+                <div class="text-sm font-bold text-gray-800 dark:text-gray-100" id="editItemName">-</div>
+                <div class="text-xs text-gray-500 font-mono mt-1" id="editItemBarcode">-</div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">الكمية</label>
+                <input type="number" id="editItemQty" min="1" step="1" class="form-input text-center font-bold" onfocus="this.select()">
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">تاريخ الإنتاج</label>
+                    <input type="date" id="editItemProd" class="form-input">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">تاريخ الانتهاء</label>
+                    <input type="date" id="editItemExp" class="form-input">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">رقم الباتش</label>
+                <input type="text" id="editItemBatch" class="form-input">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">ملاحظة</label>
+                <input type="text" id="editItemNotes" class="form-input">
+            </div>
+        </div>
+        <div class="p-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2">
+            <button type="button" class="btn" onclick="closeItemEditModal()">إلغاء</button>
+            <button type="button" class="btn btn-primary" onclick="saveItemEditFromDetail()">💾 حفظ التعديل</button>
         </div>
     </div>
 </div>
@@ -765,5 +816,104 @@ function filterByLocation() {
         info.textContent = '';
     }
 }
+
+function closeItemEditModal() {
+    const modal = document.getElementById('editItemModal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+async function openItemEditModal(itemId) {
+    try {
+        const resp = await fetch(`/api/periodic-stocktake/item/${itemId}`, { headers: csrfHeaders() });
+        const data = await resp.json();
+        if (!data.success) {
+            showToast(data.message || 'تعذر جلب بيانات الصنف', 'error');
+            return;
+        }
+
+        const i = data.item || {};
+        document.getElementById('editItemId').value = itemId;
+        document.getElementById('editItemName').textContent = i.product_name_db || i.product_name || '-';
+        document.getElementById('editItemBarcode').textContent = i.barcode || '-';
+        document.getElementById('editItemQty').value = parseInt(i.counted_stock || 1, 10);
+        document.getElementById('editItemProd').value = i.production_date || '';
+        document.getElementById('editItemExp').value = i.expiry_date || '';
+        document.getElementById('editItemBatch').value = i.batch_no || '';
+        document.getElementById('editItemNotes').value = i.notes || '';
+
+        const modal = document.getElementById('editItemModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    } catch (e) {
+        showToast('تعذر فتح نموذج التعديل', 'error');
+    }
+}
+
+async function saveItemEditFromDetail() {
+    const itemId = parseInt(document.getElementById('editItemId').value || '0', 10);
+    if (!itemId) {
+        showToast('تعذر تحديد العنصر', 'error');
+        return;
+    }
+
+    const qty = parseInt(document.getElementById('editItemQty').value || '1', 10);
+    const productionDate = (document.getElementById('editItemProd').value || '').trim();
+    const expiryDate = (document.getElementById('editItemExp').value || '').trim();
+    const batchNo = (document.getElementById('editItemBatch').value || '').trim();
+    const notes = (document.getElementById('editItemNotes').value || '').trim();
+
+    if (!qty || qty < 1) {
+        showToast('الكمية يجب أن تكون 1 أو أكثر', 'warning');
+        return;
+    }
+
+    if (productionDate && expiryDate && productionDate > expiryDate) {
+        showToast('تاريخ الإنتاج يجب أن يكون قبل أو يساوي تاريخ الانتهاء', 'warning');
+        return;
+    }
+
+    const headers = { ...csrfHeaders(), 'Content-Type': 'application/json' };
+    const payload = {
+        counted_stock: qty,
+        production_date: productionDate,
+        expiry_date: expiryDate,
+        batch_no: batchNo,
+        notes: notes
+    };
+
+    try {
+        const resp = await fetch(`/api/periodic-stocktake/item/${itemId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            showToast(data.message || 'فشل التحديث', 'error');
+            return;
+        }
+
+        showToast('تم تحديث الصنف بنجاح ✅', 'success');
+        closeItemEditModal();
+        window.location.reload();
+    } catch (e) {
+        showToast('تعذر تحديث الصنف', 'error');
+    }
+}
+
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('editItemModal');
+    if (modal && e.target === modal) {
+        closeItemEditModal();
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeItemEditModal();
+    }
+});
 </script>
 {% endblock %}
